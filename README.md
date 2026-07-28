@@ -141,7 +141,7 @@ cargo clippy --workspace -- -D warnings
 | 2 | Documentation consolidation | ✅ Complete |
 | 3 | Documentation frozen | ✅ Complete |
 | 4 | RFC-0001: Kernel Event Store | ✅ Complete (in-memory) |
-| 5 | RFC-0002: Projection Engine | 🔨 In Progress |
+| 5 | RFC-0002: Projection Engine | ✅ Complete |
 | 6 | RFC-0003: Observation Pipeline | ⏳ Pending |
 | 7 | RFC-0004: Execution Engine | ⏳ Pending |
 | 8 | Real AI provider | ⏳ Pending |

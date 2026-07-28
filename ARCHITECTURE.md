@@ -221,7 +221,7 @@ Scope:
 
 No git. No builds. No AI.
 
-### Milestone 5: In Progress (RFC-0002)
+### Milestone 5: Completed (RFC-0002)
 
 Projection Engine subsystem.
 
