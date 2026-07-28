@@ -25,7 +25,27 @@ pub enum RuntimeError {
 // ---------------------------------------------------------------------------
 
 /// Core provider interface. Every backend implements this trait.
-pub trait CapabilityProvider {
+///
+/// Providers are `Send + Sync` — the runtime may hold `Arc<dyn CapabilityProvider>`
+/// and share it across threads. Implementations must not rely on single-threaded
+/// access.
+///
+/// Prompt building is private to each provider. The runtime never constructs
+/// prompts. Different models (Llama, Qwen, Gemma) have different prompting
+/// strategies, and those belong inside the provider.
+///
+/// The API is synchronous. Inference is CPU-bound; async would just move work
+/// to `spawn_blocking` with no real benefit. If the runtime later needs async
+/// orchestration, wrap synchronous providers without changing this contract.
+pub trait CapabilityProvider: Send + Sync {
+    /// Returns metadata about this provider.
+    fn info(&self) -> contract::ProviderInfo;
+
+    /// Reports provider health. Even if always `Healthy` today, this gives
+    /// introspection for model-missing, weights-corrupted, OOM, etc.
+    fn health(&self) -> contract::ProviderHealth;
+
+    /// Execute a capability request and return the matching response variant.
     fn execute(&self, request: CapabilityRequest) -> Result<CapabilityResponse, RuntimeError>;
 }
 
@@ -64,11 +84,28 @@ impl<T: CapabilityProvider> CapabilityProviderExt for T {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use contract::{BuildSummaryResponse, ExplainRustResponse, RequestMetadata};
+    use contract::{
+        BuildSummaryResponse, ExplainRustResponse, ProviderHealth, ProviderInfo, RequestMetadata,
+    };
 
     struct EchoProvider;
 
     impl CapabilityProvider for EchoProvider {
+        fn info(&self) -> ProviderInfo {
+            ProviderInfo {
+                name: "echo".into(),
+                version: "0.1.0".into(),
+                supported_capabilities: vec![
+                    contract::CapabilityKind::BuildSummary,
+                    contract::CapabilityKind::ExplainRust,
+                ],
+            }
+        }
+
+        fn health(&self) -> ProviderHealth {
+            ProviderHealth::Healthy
+        }
+
         fn execute(&self, request: CapabilityRequest) -> Result<CapabilityResponse, RuntimeError> {
             match request {
                 CapabilityRequest::BuildSummary(req) => {

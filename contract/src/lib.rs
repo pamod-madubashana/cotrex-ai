@@ -4,6 +4,13 @@ use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // Protocol version
+//
+// Exact version match is required. A provider implementing protocol 1.0 will
+// reject requests tagged 1.1 and vice versa. There is no negotiation, no
+// downgrade, and no compatibility layer. Breaking changes are explicit and
+// require a major version bump.
+//
+// Streaming responses are intentionally out of scope for Protocol v1.
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -13,6 +20,30 @@ pub struct ProtocolVersion {
 }
 
 pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
+
+// ---------------------------------------------------------------------------
+// Provider metadata
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderInfo {
+    pub name: String,
+    pub version: String,
+    pub supported_capabilities: Vec<CapabilityKind>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CapabilityKind {
+    BuildSummary,
+    ExplainRust,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ProviderHealth {
+    Healthy,
+    Degraded { reason: &'static str },
+    Unhealthy { reason: &'static str },
+}
 
 // ---------------------------------------------------------------------------
 // Protocol error (contract-level, not runtime-level)

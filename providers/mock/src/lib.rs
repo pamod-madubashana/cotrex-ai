@@ -1,6 +1,6 @@
 use contract::{
-    BuildSummaryRequest, BuildSummaryResponse, CapabilityRequest, CapabilityResponse,
-    ExplainRustRequest, ExplainRustResponse,
+    BuildSummaryRequest, BuildSummaryResponse, CapabilityKind, CapabilityRequest,
+    CapabilityResponse, ExplainRustRequest, ExplainRustResponse, ProviderHealth, ProviderInfo,
 };
 use runtime::{CapabilityProvider, RuntimeError};
 
@@ -9,6 +9,18 @@ use runtime::{CapabilityProvider, RuntimeError};
 pub struct MockProvider;
 
 impl CapabilityProvider for MockProvider {
+    fn info(&self) -> ProviderInfo {
+        ProviderInfo {
+            name: "mock".into(),
+            version: "0.1.0".into(),
+            supported_capabilities: vec![CapabilityKind::BuildSummary, CapabilityKind::ExplainRust],
+        }
+    }
+
+    fn health(&self) -> ProviderHealth {
+        ProviderHealth::Healthy
+    }
+
     fn execute(&self, request: CapabilityRequest) -> Result<CapabilityResponse, RuntimeError> {
         match request {
             CapabilityRequest::BuildSummary(req) => Ok(CapabilityResponse::BuildSummary(

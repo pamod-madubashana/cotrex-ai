@@ -4,5 +4,6 @@ members = [
     "contract",
     "runtime",
     "providers/mock",
+    "providers/json",
     "examples",
 ]

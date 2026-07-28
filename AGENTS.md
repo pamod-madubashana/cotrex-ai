@@ -1,5 +1,16 @@
 # AGENTS.md — cotrex-ai
 
+## Documentation Hierarchy
+
+| Document | Purpose |
+|----------|---------|
+| `Vision.md` | Why Cotrex exists. Philosophy, goals, principles. No implementation. |
+| `ARCHITECTURE.md` | **Canonical source of truth.** Subsystems, boundaries, dependency direction. |
+| `RFC/` | How subsystems are implemented. Protocol definitions, APIs. |
+| `ADR/` | Why technologies or designs were chosen. |
+
+**Rule:** `ARCHITECTURE.md` is the single architectural source of truth. All other documents derive from it.
+
 ## Commands
 
 ```bash
@@ -15,16 +26,19 @@ Single crate: `rtk cargo test -p contract`
 
 ## Architecture
 
-This is the **Cotrex AI Runtime** — a protocol-first system where the contract defines the protocol and the runtime executes it. No AI inference exists yet (Phase 1).
-
 ```
 contract/     → protocol types only (no logic, no providers)
 runtime/      → CapabilityProvider trait + extension methods
-providers/    → provider implementations (mock only for now)
+providers/    → provider implementations (mock, json-fixture)
 examples/     → usage examples (binary: example-runner)
+fixtures/     → JSON response fixtures
 ```
 
 **Key invariant:** The kernel depends on the protocol. The runtime depends on the protocol. Providers depend on the runtime. Models are implementation details.
+
+**Layer model:**
+- Kernel → Intelligence Brain → cotrex-ai Runtime → Providers
+- No layer depends on layers below it.
 
 ## Error Split
 
@@ -35,10 +49,26 @@ Runtime errors wrap contract errors via `From` impl.
 
 ## Protocol Types
 
-- `CapabilityRequest` (not `Capability`) — the request enum
+- `CapabilityRequest` — the request enum
 - `CapabilityResponse` — the response enum
 - `RequestMetadata` — contains `Uuid` + `SystemTime`, attach to every request
-- `ProtocolVersion { major, minor }` — versioned, not a bare `u32`
+- `ProtocolVersion { major, minor }` — exact version match required, no negotiation
+- `ProviderInfo` — provider metadata (name, version, capabilities)
+- `ProviderHealth` — provider health status (`Healthy`, `Degraded`, `Unhealthy`)
+
+## Provider Trait
+
+```rust
+pub trait CapabilityProvider: Send + Sync {
+    fn info(&self) -> ProviderInfo;
+    fn health(&self) -> ProviderHealth;
+    fn execute(&self, request: CapabilityRequest) -> Result<CapabilityResponse, RuntimeError>;
+}
+```
+
+- Providers are `Send + Sync` — runtime may hold `Arc<dyn CapabilityProvider>`.
+- Prompt building is private to each provider.
+- The API is synchronous. Inference is CPU-bound.
 
 ## Verification
 
