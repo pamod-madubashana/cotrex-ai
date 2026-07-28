@@ -58,7 +58,10 @@ impl AiContextProjection {
 
     /// Get AI context summary (semantic state for AI consumption).
     pub fn summary(&self) -> AiContextSummary {
-        let state = self.state.lock().unwrap();
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let file_count = state.files.len();
         let total_changes: u64 = state.files.values().map(|f| f.change_count).sum();
 
@@ -91,7 +94,10 @@ impl Projection for AiContextProjection {
     }
 
     fn status(&self) -> ProjectionStatus {
-        self.status.lock().map(|s| *s).unwrap_or(ProjectionStatus::Failed)
+        self.status
+            .lock()
+            .map(|s| *s)
+            .unwrap_or(ProjectionStatus::Failed)
     }
 
     fn checkpoint(&self) -> u64 {

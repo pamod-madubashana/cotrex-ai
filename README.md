@@ -176,4 +176,4 @@ cargo clippy --workspace -- -D warnings
 
 ## License
 
-TBD
+[MIT](LICENSE)

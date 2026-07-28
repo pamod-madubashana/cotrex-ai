@@ -105,7 +105,9 @@ impl ProjectionEngine {
         })?;
         projections
             .get(name)
-            .ok_or_else(|| EventStoreError::ProjectionFailure(format!("unknown projection: {}", name)))?
+            .ok_or_else(|| {
+                EventStoreError::ProjectionFailure(format!("unknown projection: {}", name))
+            })?
             .start_processing()
     }
 
@@ -198,6 +200,98 @@ mod tests {
             timestamp: SystemTime::now(),
         })
     }
+
+    // -----------------------------------------------------------------------
+    // Test-only FailingProjection for isolation testing
+    // -----------------------------------------------------------------------
+
+    struct FailingProjection {
+        status: Mutex<ProjectionStatus>,
+        checkpoint: Mutex<u64>,
+        fail_on_process: bool,
+    }
+
+    impl FailingProjection {
+        fn new(fail_on_process: bool) -> Self {
+            Self {
+                status: Mutex::new(ProjectionStatus::Created),
+                checkpoint: Mutex::new(0),
+                fail_on_process,
+            }
+        }
+    }
+
+    impl Projection for FailingProjection {
+        fn name(&self) -> &str {
+            "Failing"
+        }
+
+        fn status(&self) -> ProjectionStatus {
+            self.status
+                .lock()
+                .map(|s| *s)
+                .unwrap_or(ProjectionStatus::Failed)
+        }
+
+        fn checkpoint(&self) -> u64 {
+            self.checkpoint.lock().map(|c| *c).unwrap_or(0)
+        }
+
+        fn process_event(&self, event: &Event) -> Result<(), EventStoreError> {
+            if self.fail_on_process {
+                return Err(EventStoreError::ProjectionFailure(
+                    "forced test failure".to_string(),
+                ));
+            }
+            let mut cp = self.checkpoint.lock().map_err(|e| {
+                EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+            })?;
+            *cp = event.sequence;
+            Ok(())
+        }
+
+        fn rebuild(&self, _store: &EventStore) -> Result<(), EventStoreError> {
+            let mut cp = self.checkpoint.lock().map_err(|e| {
+                EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+            })?;
+            *cp = 0;
+            Ok(())
+        }
+
+        fn initialize(&self, _store: &EventStore) -> Result<(), EventStoreError> {
+            let mut status = self.status.lock().map_err(|e| {
+                EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+            })?;
+            *status = ProjectionStatus::Initialized;
+            Ok(())
+        }
+
+        fn start_processing(&self) -> Result<(), EventStoreError> {
+            let mut status = self.status.lock().map_err(|e| {
+                EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+            })?;
+            if !status.can_transition_to(ProjectionStatus::Processing) {
+                return Err(EventStoreError::ProjectionFailure(format!(
+                    "invalid transition: {:?} -> Processing",
+                    *status
+                )));
+            }
+            *status = ProjectionStatus::Processing;
+            Ok(())
+        }
+
+        fn mark_failed(&self) -> Result<(), EventStoreError> {
+            let mut status = self.status.lock().map_err(|e| {
+                EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+            })?;
+            *status = ProjectionStatus::Failed;
+            Ok(())
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Engine tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn engine_starts_empty() {
@@ -329,6 +423,87 @@ mod tests {
             engine.status("FileChange").unwrap(),
             ProjectionStatus::Processing
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // RFC-0002 Section 7: Cross-projection failure isolation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn projection_failure_isolated_from_other_projections() {
+        let engine = ProjectionEngine::new();
+
+        // Register a healthy projection and a failing projection
+        let healthy = FileChangeProjection::new();
+        let failing = FailingProjection::new(true); // will fail on process_event
+        engine.register(Box::new(healthy)).unwrap();
+        engine.register(Box::new(failing)).unwrap();
+
+        assert_eq!(engine.len(), 2);
+
+        // Initialize both
+        let store = EventStore::new();
+        store.append(file_changed_payload("a.txt")).unwrap();
+        store.append(file_changed_payload("b.txt")).unwrap();
+        engine.rebuild_all(&store).unwrap();
+
+        // Start processing both
+        engine.start_processing("FileChange").unwrap();
+        engine.start_processing("Failing").unwrap();
+
+        assert_eq!(
+            engine.status("FileChange").unwrap(),
+            ProjectionStatus::Processing
+        );
+        assert_eq!(
+            engine.status("Failing").unwrap(),
+            ProjectionStatus::Processing
+        );
+
+        // Process an event - FailingProjection will fail
+        let event = store.append(file_changed_payload("c.txt")).unwrap();
+        let errors = engine.process_event_collect_errors(&event).unwrap();
+
+        // FailingProjection should have reported an error
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].0, "Failing");
+
+        // FailingProjection status is still Processing (engine doesn't auto-fail)
+        // but its process_event returned error - isolation is proven because:
+        // 1. FileChangeProjection processed the event successfully
+        // 2. FileChangeProjection state was updated
+        // 3. FileChangeProjection checkpoint advanced
+        assert_eq!(engine.checkpoint("FileChange").unwrap(), 3);
+        assert_eq!(engine.checkpoint("Failing").unwrap(), 0); // failed, no update
+
+        // Verify FileChangeProjection state includes all 3 files
+        // (we can't directly access state through engine, but checkpoint proves processing)
+    }
+
+    #[test]
+    fn projection_failure_does_not_modify_event_store() {
+        let engine = ProjectionEngine::new();
+
+        let healthy = FileChangeProjection::new();
+        let failing = FailingProjection::new(true);
+        engine.register(Box::new(healthy)).unwrap();
+        engine.register(Box::new(failing)).unwrap();
+
+        let store = EventStore::new();
+        store.append(file_changed_payload("a.txt")).unwrap();
+        store.append(file_changed_payload("b.txt")).unwrap();
+
+        let store_len_before = store.len();
+
+        engine.rebuild_all(&store).unwrap();
+        engine.start_processing("FileChange").unwrap();
+        engine.start_processing("Failing").unwrap();
+
+        let event = store.append(file_changed_payload("c.txt")).unwrap();
+        let _errors = engine.process_event_collect_errors(&event).unwrap();
+
+        // EventStore must be unchanged by projection failure
+        assert_eq!(store.len(), store_len_before + 1); // only the append we did
     }
 }
 

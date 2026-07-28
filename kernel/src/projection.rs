@@ -65,7 +65,10 @@ impl FileChangeProjection {
 
     /// Return current projection status.
     pub fn status(&self) -> ProjectionStatus {
-        self.status.lock().map(|s| *s).unwrap_or(ProjectionStatus::Failed)
+        self.status
+            .lock()
+            .map(|s| *s)
+            .unwrap_or(ProjectionStatus::Failed)
     }
 
     /// Return current checkpoint offset.
@@ -532,5 +535,72 @@ mod tests {
 
         proj.rebuild(&store).unwrap();
         assert_eq!(proj.checkpoint(), 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // RFC-0002 Section 10: Checkpoint associativity
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn checkpoint_associativity_full_rebuild_equals_resume() {
+        // Create 5 events
+        let store = EventStore::new();
+        let ops = [
+            (PathBuf::from("a.txt"), FileOperation::Created),
+            (PathBuf::from("a.txt"), FileOperation::Modified),
+            (PathBuf::from("b.txt"), FileOperation::Created),
+            (PathBuf::from("a.txt"), FileOperation::Deleted),
+            (PathBuf::from("c.txt"), FileOperation::Created),
+        ];
+
+        for (path, op) in &ops {
+            store
+                .append(EventPayload::FileChanged(FileChanged {
+                    path: path.clone(),
+                    operation: *op,
+                    timestamp: SystemTime::now(),
+                }))
+                .unwrap();
+        }
+
+        // Path A: Full rebuild from sequence 0
+        let full_proj = FileChangeProjection::new();
+        full_proj.rebuild(&store).unwrap();
+        let full_state = full_proj.state();
+        let full_checkpoint = full_proj.checkpoint();
+
+        // Path B: Process events 1..3, then 4..5 (two batches)
+        let batch_proj = FileChangeProjection::new();
+        let events = store.replay(1).unwrap();
+
+        // Batch 1: events 1..3
+        for event in events.events.iter().take(3) {
+            batch_proj.process_event(event).unwrap();
+        }
+        assert_eq!(batch_proj.checkpoint(), 3);
+
+        // Batch 2: events 4..5
+        for event in events.events.iter().skip(3) {
+            batch_proj.process_event(event).unwrap();
+        }
+
+        // Verify: batch checkpoint == full checkpoint
+        assert_eq!(batch_proj.checkpoint(), full_checkpoint);
+        assert_eq!(batch_proj.checkpoint(), 5);
+
+        // Verify: batch state == full rebuild state
+        let batch_state = batch_proj.state();
+        assert_eq!(full_state, batch_state);
+
+        // Verify specific state contents
+        let a_full = full_state.get(&PathBuf::from("a.txt")).unwrap();
+        let a_batch = batch_state.get(&PathBuf::from("a.txt")).unwrap();
+        assert_eq!(a_full.change_count, 3); // Created, Modified, Deleted
+        assert_eq!(a_full.last_operation, FileOperation::Deleted);
+        assert_eq!(a_batch.change_count, 3);
+        assert_eq!(a_batch.last_operation, FileOperation::Deleted);
+
+        assert!(full_state.contains_key(&PathBuf::from("b.txt")));
+        assert!(full_state.contains_key(&PathBuf::from("c.txt")));
     }
 }
