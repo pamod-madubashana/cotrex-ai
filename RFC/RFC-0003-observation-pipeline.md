@@ -23,10 +23,31 @@ them.
 
 ---
 
-## 2. Glossary
+## 2. Scope
+
+This RFC defines:
+
+- Raw observation model
+- Translation rules
+- Filtering behavior
+- Pipeline lifecycle
+- Ownership boundaries
+
+This RFC does NOT define:
+
+- Filesystem watcher implementation (platform-specific)
+- Semantic deduplication (future RFC-0006)
+- Content analysis
+- Git integration
+
+---
+
+## 3. Glossary
 
 - **Observation**: a raw notification from an external system indicating
   a potential change.
+- **RawObservation**: the typed representation of a filesystem
+  notification before translation.
 - **Translation**: the process of converting a raw observation into a
   typed kernel event.
 - **Filtering**: the process of discarding observations that are
@@ -39,179 +60,175 @@ them.
 
 ---
 
-## 3. Architecture Position
+## 4. Architecture Position
 
 The Observation Pipeline sits between the external world and the Event
 Store.
 
 ```text
-External World
-      |
-      v
+External World (filesystem)
+        |
+        v
 Observation Pipeline
-      |
-      v
+        |
+        v
 Event Store
-      |
-      v
+        |
+        v
 Projection Engine
-      |
-      v
-Derived State
+        |
+        v
+Derived State / AI Context
 ```
 
-The pipeline owns:
+### Ownership Rules
 
-- external observation (filesystem watching, process monitoring)
-- raw event filtering (ignore irrelevant changes)
-- event translation (raw notification → typed event)
-- EventStore append requests
+**Observation Pipeline owns:**
 
-The pipeline does NOT own:
+- receiving raw observations
+- validating observations against ignore rules
+- translating raw operations to typed events
+- creating EventPayload values
+- calling EventStore.append()
 
-- sequence number assignment (Event Store)
-- event ordering (Event Store)
-- projection updates (Projection Engine)
-- AI context generation (AI Context Projection)
-- derived state
-- execution
-- AI inference
+**EventStore owns:**
 
----
+- event identity assignment (UUID)
+- sequence number allocation
+- ordering guarantees
+- committed event storage
+- replay
 
-## 4. Observation Guarantees
+**Projection Engine owns:**
 
-### 4.1 Event Creation
+- state derivation from events
+- replay
+- checkpoints
 
-Every accepted observation produces exactly one committed event.
+**Observation Pipeline MUST NOT:**
 
-If the Event Store rejects the append (backpressure, failure), the
-observation is not considered observed. The pipeline must propagate the
-error.
-
-### 4.2 Ordering
-
-The Observation Pipeline does not assign sequence numbers. The Event
-Store is the sole owner of event ordering.
-
-The pipeline may observe changes in any order. The Event Store commits
-them in arrival order. Projections consume them in sequence order.
-
-### 4.3 No Semantic Interpretation
-
-The pipeline translates raw observations into typed events. It does not:
-
+- assign sequence numbers
+- assign event IDs
+- update projections
+- create AI context
 - interpret file contents
-- analyze change semantics
-- detect conflicts
-- merge changes
-- reason about project structure
-
-Semantic understanding belongs to projections and the Intelligence Brain.
 
 ---
 
-## 5. Event Translation
+## 5. Raw Observation Model
 
-The pipeline translates raw observations into `FileChanged` events.
-
-### 5.1 FileChanged Event
-
-From RFC-0001:
+### RawObservation
 
 ```rust
-FileChanged {
-    path: PathBuf,
-    operation: FileOperation,
-    timestamp: SystemTime,
+pub struct RawObservation {
+    pub path: PathBuf,
+    pub operation: RawOperation,
 }
 ```
 
-### 5.2 Translation Rules
+Raw observations are temporary pipeline inputs. They are NOT stored in
+the EventStore. After translation, raw observations are discarded.
 
-| Raw Observation | Translated Event |
-|-----------------|------------------|
-| File created | `FileChanged { operation: Created }` |
-| File modified | `FileChanged { operation: Modified }` |
-| File deleted | `FileChanged { operation: Deleted }` |
-| File renamed | `FileChanged { operation: Deleted }` + `FileChanged { operation: Created }` |
-| Metadata changed | Ignored (not a file content change) |
+### RawOperation
 
-### 5.3 Timestamp
+```rust
+pub enum RawOperation {
+    Created,
+    Modified,
+    Deleted,
+    Renamed { from: PathBuf },
+}
+```
+
+| Variant | Description |
+|---------|-------------|
+| Created | New file appeared |
+| Modified | File content changed |
+| Deleted | File removed |
+| Renamed | File moved or renamed (produces two events) |
+
+---
+
+## 6. Translation Rules
+
+The Translator converts RawObservation into EventPayload values.
+
+### Translation Map
+
+| RawOperation | EventPayload |
+|--------------|--------------|
+| Created | `FileChanged { path, operation: Created, timestamp }` |
+| Modified | `FileChanged { path, operation: Modified, timestamp }` |
+| Deleted | `FileChanged { path, operation: Deleted, timestamp }` |
+| Renamed { from } | `FileChanged { path: from, operation: Deleted, timestamp }` + `FileChanged { path, operation: Created, timestamp }` |
+
+### Timestamp
 
 The `timestamp` field records when the observation was translated, not
 when the filesystem change occurred. Wall-clock time is not authoritative
 for ordering; sequence numbers are.
 
----
+### Translation Output
 
-## 6. File Watching Semantics
+```rust
+pub fn translate(observation: &RawObservation) -> Result<Vec<EventPayload>, TranslationError>
+```
 
-### 6.1 Recursive Watching
-
-The MVP watches the project root recursively. All subdirectories are
-observed.
-
-### 6.2 Ignore Patterns
-
-The following are ignored by default:
-
-- `.git/` directory
-- `target/` directory
-- Editor temporary files (files starting with `.` or ending with `~`)
-- Binary files (optional, configurable)
-
-### 6.3 Scope
-
-The pipeline watches:
-
-- file creation
-- file modification
-- file deletion
-
-The pipeline does NOT watch:
-
-- process execution
-- network changes
-- environment variable changes
-- socket activity
+- Returns `Ok(vec![payload])` for Created, Modified, Deleted
+- Returns `Ok(vec![delete_payload, create_payload])` for Renamed
+- Returns `Err` only if the observation cannot be represented
 
 ---
 
 ## 7. Filtering Rules
 
-### 7.1 Accepted Observations
+The ObservationFilter determines which observations are accepted.
 
-An observation is accepted if:
+### Default Ignore Patterns
 
-- the path is within the project root
-- the path does not match ignore patterns
-- the operation is a recognized filesystem change
+| Pattern | Reason |
+|---------|--------|
+| `.git` | Version control metadata |
+| `target` | Build artifacts |
+| `.DS_Store` | macOS metadata |
+| `Thumbs.db` | Windows metadata |
 
-### 7.2 Rejected Observations
+### Additional Rejection Rules
 
-An observation is rejected if:
+| Condition | Reason |
+|-----------|--------|
+| Path outside project root | Not in scope |
+| Hidden files (`.env`, `.config`) | Dotfile prefix |
+| Temp files (`file~`) | Editor backup |
+| Swap files (`file.swp`, `file.swo`) | Vim swap |
 
-- the path is outside the project root
-- the path matches ignore patterns
-- the operation is metadata-only (chmod, chown)
-- the observation is a duplicate raw notification (see Section 8)
+### Filter Contract
 
-### 7.3 Filtering Errors
+```rust
+pub fn filter(&self, observation: &RawObservation) -> FilterDecision
+```
 
-Filtering is deterministic. The same observation always produces the same
-decision. Filtering does not depend on:
+Filtering is deterministic. The same observation always produces the
+same decision. Filtering does NOT depend on:
 
 - project state
 - previous observations
 - time of day
 - external configuration
 
+### Custom Patterns
+
+```rust
+pub fn add_ignore_pattern(&mut self, pattern: String)
+```
+
+Patterns are matched against path components, not full paths.
+
 ---
 
 ## 8. Duplicate Notification Policy
 
-### 8.1 MVP Behavior
+### MVP Behavior
 
 The MVP does NOT guarantee semantic deduplication.
 
@@ -219,9 +236,21 @@ A raw filesystem notification produces an event. If the filesystem sends
 duplicate notifications for the same logical change, the pipeline
 produces duplicate events.
 
-The Event Store preserves all accepted observations.
+```text
+OS emits:
+  modify(file.rs)
+  modify(file.rs)
+  modify(file.rs)
 
-### 8.2 Rationale
+Pipeline produces:
+  FileChanged(file.rs, Modified)
+  FileChanged(file.rs, Modified)
+  FileChanged(file.rs, Modified)
+```
+
+No debounce. No semantic deduplication.
+
+### Rationale
 
 Semantic change detection is complex:
 
@@ -242,7 +271,7 @@ Is that 1 change? 3 changes? 5 changes?
 The filesystem does not know. The watcher does not know. Pretending
 otherwise creates false correctness.
 
-### 8.3 Future Work
+### Future Work
 
 Semantic deduplication is deferred to a future RFC:
 
@@ -257,60 +286,91 @@ Potential strategies:
 
 ---
 
-## 9. Failure Semantics
+## 9. EventStore Integration
 
-### 9.1 Watcher Failure
+### Append Flow
 
-If the filesystem watcher crashes or becomes unavailable:
+```text
+RawObservation
+    |
+    v
+Filter (accept/reject)
+    |
+    v
+Translate (RawObservation -> Vec<EventPayload>)
+    |
+    v
+EventStore.append(payload)  // for each payload
+    |
+    v
+Committed Event (with sequence number)
+```
 
-- the pipeline enters the `Failed` state
-- the Event Store remains valid
-- existing committed events remain available
-- new observations are not processed until recovery
-
-### 9.2 Append Failure
+### Error Handling
 
 If `EventStore.append()` fails:
 
-- the event is not considered observed
-- the failure is propagated to the caller
-- no silent loss occurs
-- the pipeline may retry or enter `Failed` state
-
-### 9.3 Translation Failure
-
-If a raw observation cannot be translated into a valid event:
-
-- the observation is rejected
-- the rejection is logged
-- the pipeline continues processing other observations
-- no phantom events are created
+- The event is not considered observed
+- The failure is propagated to the caller
+- No silent loss occurs
+- The pipeline remains in Watching state
 
 ---
 
-## 10. Backpressure Handling
+## 10. Failure Semantics
 
-If the Event Store cannot accept events (capacity reached):
+### Watcher Failure
 
-Allowed:
+If the filesystem watcher crashes or becomes unavailable:
 
-- block the producer until capacity is available
-- return an explicit error to the caller
+- The pipeline enters the `Failed` state
+- The EventStore remains valid
+- Existing committed events remain available
+- New observations are not processed until recovery
 
-Forbidden:
+### Append Failure
 
-- dropping filesystem events silently
-- silently discarding observations
-- buffering without bound
+If `EventStore.append()` fails:
+
+- The event is not considered observed
+- The failure is propagated to the caller
+- No silent loss occurs
+- The pipeline may retry or enter `Failed` state
+
+### Translation Failure
+
+If a raw observation cannot be translated into a valid event:
+
+- The observation is rejected
+- The rejection is logged via PipelineStats
+- The pipeline continues processing other observations
+- No phantom events are created
+
+---
+
+## 11. Backpressure Handling
+
+If the EventStore cannot accept events (capacity reached):
+
+**Allowed:**
+
+- Block the producer until capacity is available
+- Return an explicit error to the caller
+
+**Forbidden:**
+
+- Dropping filesystem events silently
+- Silently discarding observations
+- Buffering without bound
 
 The pipeline must either deliver the event or report failure. Never
 silent loss.
 
 ---
 
-## 11. Lifecycle
+## 12. Lifecycle
 
-### 11.1 States
+### States
 
 ```text
 Created
@@ -335,7 +395,7 @@ Stopped
 | Failed | Pipeline encountered an error; observations suspended. |
 | Stopped | Pipeline has been shut down. |
 
-### 11.2 Allowed Transitions
+### Allowed Transitions
 
 | From | To | Trigger |
 |------|----|---------|
@@ -345,7 +405,7 @@ Stopped
 | Failed | Initializing | Recovery requested |
 | Watching | Stopped | Shutdown requested |
 
-### 11.3 Invalid Transitions
+### Invalid Transitions
 
 - Created → Watching (must initialize first)
 - Stopped → Watching (cannot restart after shutdown)
@@ -353,24 +413,83 @@ Stopped
 
 ---
 
-## 12. Invariants
+## 13. Statistics
+
+PipelineStats provides monitoring counters.
+
+```rust
+pub struct PipelineStats {
+    pub accepted: u64,
+    pub rejected: u64,
+    pub events_created: u64,
+}
+```
+
+| Counter | Description |
+|---------|-------------|
+| accepted | Observations that passed filtering |
+| rejected | Observations discarded by filtering |
+| events_created | Total EventPayload values appended |
+
+Statistics are observational only. They MUST NOT influence:
+
+- event ordering
+- event creation
+- filtering behavior
+- projection state
+
+---
+
+## 14. Guarantees
+
+### Event Creation
+
+Every accepted observation produces exactly one or more committed events.
+
+If the EventStore rejects the append (backpressure, failure), the
+observation is not considered observed. The pipeline must propagate the
+error.
+
+### Ordering
+
+The ObservationPipeline does not assign sequence numbers. The EventStore
+is the sole owner of event ordering.
+
+The pipeline may observe changes in any order. The EventStore commits
+them in arrival order. Projections consume them in sequence order.
+
+### No Semantic Interpretation
+
+The pipeline translates raw observations into typed events. It does not:
+
+- interpret file contents
+- analyze change semantics
+- detect conflicts
+- merge changes
+- reason about project structure
+
+Semantic understanding belongs to projections and the Intelligence Brain.
+
+---
+
+## 15. Invariants
 
 Every conforming implementation MUST satisfy:
 
 1. Observation creates events, not state.
-2. The Event Store is the only owner of event ordering.
+2. The EventStore is the only owner of event ordering.
 3. Every accepted observation becomes exactly one committed event.
 4. Failed observations never create phantom events.
 5. Projections never receive raw watcher events.
 6. Duplicate raw notifications are preserved unless future normalization
    exists.
-7. Observation failure cannot corrupt Event Store history.
+7. Observation failure cannot corrupt EventStore history.
 8. The pipeline does not interpret file contents.
 9. The pipeline does not update projections or derived state.
 
 ---
 
-## 13. Non-Goals
+## 16. Non-Goals
 
 The following are explicitly out of scope for this RFC:
 
