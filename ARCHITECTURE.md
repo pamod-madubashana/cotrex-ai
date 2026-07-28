@@ -17,7 +17,7 @@ This is the canonical architecture document for Cotrex. All other documents deri
 
 ## System Layers
 
-Cotrex is organized into three architectural layers. Each layer depends only on the layers above it. No layer depends on layers below it.
+Cotrex is organized into four architectural layers. Each layer depends only on the layers above it. No layer depends on layers below it.
 
 ```text
                  Cotrex
@@ -186,22 +186,24 @@ These will only be introduced when justified by production usage.
 
 ---
 
-## Implementation Phases
+## Implementation Milestones
 
-### Phase 1: Completed
+### Milestone 1: Completed
 
 - cotrex-ai protocol (contract crate)
 - Runtime crate (CapabilityProvider trait)
 - Mock provider
-- 25 tests passing
+- JSON fixture provider
+- 30 tests passing
 
-### Phase 2: Completed
+### Milestone 2: Completed
 
 - Documentation consolidation
 - Architecture cleanup
 - AGENTS.md
+- ADR-0002: Protocol Versioning Strategy
 
-### Phase 3: RFC-0001
+### Milestone 3: RFC-0001
 
 Minimal event-sourced kernel.
 
@@ -215,13 +217,41 @@ Scope:
 
 No git. No builds. No AI.
 
-### Phase 4: Real AI Provider
+### Milestone 4: Real AI Provider
 
 First real inference provider (Candle or llama.cpp).
 
-### Phase 5: Remaining Kernel Capabilities
+### Milestone 5: Remaining Kernel Capabilities
 
 Remaining kernel subsystems: execution, projections, Intelligence Brain orchestration.
+
+---
+
+## Kernel MVP Scope
+
+> **Kernel MVP Scope Lock**
+>
+> The objective is to validate the event model only.
+
+### Allowed
+
+- FileChanged event
+- Event Store
+- Replay
+- One Projection
+- Ordering validation
+- Backpressure validation
+
+### Explicitly Excluded
+
+- Git
+- Build system
+- AI
+- Execution
+- Search
+- Knowledge Graph
+- Plugins
+- Networking
 
 ---
 

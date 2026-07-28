@@ -33,3 +33,22 @@ Example: `ADR-0001-event-sourcing.md`
 - `Proposed` — Under review
 - `Accepted` — Decision finalized
 - `Superseded` — Replaced by a later ADR
+
+---
+
+## ADR Index
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| ADR-0001 | Event Sourcing | Planned |
+| ADR-0002 | Protocol Versioning Strategy | Accepted |
+| ADR-0003 | Closed Capability Protocol | Planned |
+| ADR-0004 | Cargo Workspace | Planned |
+| ADR-0005 | AI as Advisory Layer | Planned |
+
+---
+
+## References
+
+- ARCHITECTURE.md: Architectural Invariants section
+- Vision.md: Guiding Principles section
