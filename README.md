@@ -155,7 +155,7 @@ cargo clippy --workspace -- -D warnings
 |-----|-------|--------|
 | [RFC-0001](RFC/RFC-0001-kernel-event-store.md) | Kernel Event Store | Implemented |
 | [RFC-0002](RFC/RFC-0002-projection-engine.md) | Projection Engine | Implemented |
-| RFC-0003 | Observation Pipeline | Planned |
+| [RFC-0003](RFC/RFC-0003-observation-pipeline.md) | Observation Pipeline | Draft |
 | RFC-0004 | Execution Engine | Planned |
 | RFC-0005 | AI Runtime Integration | Planned |
 
