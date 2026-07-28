@@ -1,6 +1,6 @@
 # RFC-0002: Projection Engine
 
-**Status:** Draft
+**Status:** Implemented
 **Milestone:** 5
 **Depends on:** RFC-0001 (Kernel Event Store)
 

@@ -203,7 +203,11 @@ These will only be introduced when justified by production usage.
 - AGENTS.md
 - ADR-0002: Protocol Versioning Strategy
 
-### Milestone 3: RFC-0001
+### Milestone 3: Completed
+
+- Documentation frozen
+
+### Milestone 4: Completed (RFC-0001)
 
 Minimal event-sourced kernel.
 
@@ -217,13 +221,34 @@ Scope:
 
 No git. No builds. No AI.
 
-### Milestone 4: Real AI Provider
+### Milestone 5: In Progress (RFC-0002)
+
+Projection Engine subsystem.
+
+Scope:
+
+- Projection trait
+- Projection lifecycle state machine
+- ProjectionEngine coordination
+- Checkpoint support
+- Multiple projection support
+- AI Context Projection
+
+### Milestone 6: Planned (RFC-0003)
+
+Observation Pipeline.
+
+### Milestone 7: Planned (RFC-0004)
+
+Execution Engine.
+
+### Milestone 8: Planned
 
 First real inference provider (Candle or llama.cpp).
 
-### Milestone 5: Remaining Kernel Capabilities
+### Milestone 9: Planned (RFC-0005)
 
-Remaining kernel subsystems: execution, projections, Intelligence Brain orchestration.
+AI Runtime Integration.
 
 ---
 

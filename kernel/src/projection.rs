@@ -5,6 +5,35 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 // ---------------------------------------------------------------------------
+// Projection lifecycle (RFC-0002, Section 5)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionStatus {
+    Created,
+    Initialized,
+    Processing,
+    Failed,
+    Rebuilding,
+}
+
+impl ProjectionStatus {
+    /// Check if transition from self to next is valid.
+    pub fn can_transition_to(self, next: ProjectionStatus) -> bool {
+        matches!(
+            (self, next),
+            (ProjectionStatus::Created, ProjectionStatus::Initialized)
+                | (ProjectionStatus::Initialized, ProjectionStatus::Processing)
+                | (ProjectionStatus::Initialized, ProjectionStatus::Rebuilding)
+                | (ProjectionStatus::Processing, ProjectionStatus::Failed)
+                | (ProjectionStatus::Processing, ProjectionStatus::Rebuilding)
+                | (ProjectionStatus::Failed, ProjectionStatus::Rebuilding)
+                | (ProjectionStatus::Rebuilding, ProjectionStatus::Initialized)
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Projection state
 // ---------------------------------------------------------------------------
 
@@ -21,13 +50,42 @@ pub struct FileRecord {
 
 pub struct FileChangeProjection {
     state: Mutex<HashMap<PathBuf, FileRecord>>,
+    status: Mutex<ProjectionStatus>,
+    checkpoint: Mutex<u64>,
 }
 
 impl FileChangeProjection {
     pub fn new() -> Self {
         Self {
             state: Mutex::new(HashMap::new()),
+            status: Mutex::new(ProjectionStatus::Created),
+            checkpoint: Mutex::new(0),
         }
+    }
+
+    /// Return current projection status.
+    pub fn status(&self) -> ProjectionStatus {
+        self.status.lock().map(|s| *s).unwrap_or(ProjectionStatus::Failed)
+    }
+
+    /// Return current checkpoint offset.
+    pub fn checkpoint(&self) -> u64 {
+        self.checkpoint.lock().map(|c| *c).unwrap_or(0)
+    }
+
+    /// Transition projection to a new status. Returns error on invalid transition.
+    fn set_status(&self, next: ProjectionStatus) -> Result<(), EventStoreError> {
+        let mut status = self.status.lock().map_err(|e| {
+            EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+        })?;
+        if !status.can_transition_to(next) {
+            return Err(EventStoreError::ProjectionFailure(format!(
+                "invalid transition: {:?} -> {:?}",
+                *status, next
+            )));
+        }
+        *status = next;
+        Ok(())
     }
 
     /// Process a single event. Only FileChanged events are relevant.
@@ -48,17 +106,42 @@ impl FileChangeProjection {
             }
         }
 
+        // Update checkpoint
+        let mut cp = self.checkpoint.lock().map_err(|e| {
+            EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+        })?;
+        *cp = event.sequence;
+
         Ok(())
     }
 
     /// Rebuild projection state from replay.
     pub fn rebuild(&self, store: &EventStore) -> Result<(), EventStoreError> {
+        // Only transition to Rebuilding if not in Created state
+        {
+            let current = self.status.lock().map_err(|e| {
+                EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+            })?;
+            if *current != ProjectionStatus::Created {
+                drop(current);
+                self.set_status(ProjectionStatus::Rebuilding)?;
+            }
+        }
+
         // Clear current state
         {
             let mut state = self.state.lock().map_err(|e| {
                 EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
             })?;
             state.clear();
+        }
+
+        // Reset checkpoint
+        {
+            let mut cp = self.checkpoint.lock().map_err(|e| {
+                EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
+            })?;
+            *cp = 0;
         }
 
         // Replay all events from sequence 0
@@ -69,7 +152,23 @@ impl FileChangeProjection {
             self.process_event(event)?;
         }
 
+        self.set_status(ProjectionStatus::Initialized)?;
         Ok(())
+    }
+
+    /// Initialize projection (Created -> Initialized).
+    pub fn initialize(&self, store: &EventStore) -> Result<(), EventStoreError> {
+        self.rebuild(store)
+    }
+
+    /// Mark projection as processing (Initialized -> Processing).
+    pub fn start_processing(&self) -> Result<(), EventStoreError> {
+        self.set_status(ProjectionStatus::Processing)
+    }
+
+    /// Mark projection as failed (Processing -> Failed).
+    pub fn mark_failed(&self) -> Result<(), EventStoreError> {
+        self.set_status(ProjectionStatus::Failed)
     }
 
     /// Get the current projection state.
@@ -283,5 +382,155 @@ mod tests {
         let store_len_after = store.len();
 
         assert_eq!(store_len_before, store_len_after);
+    }
+
+    // -----------------------------------------------------------------------
+    // Lifecycle tests (RFC-0002, Section 5)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn lifecycle_created_to_initialized() {
+        let proj = FileChangeProjection::new();
+        assert_eq!(proj.status(), ProjectionStatus::Created);
+
+        proj.initialize(&EventStore::new()).unwrap();
+        assert_eq!(proj.status(), ProjectionStatus::Initialized);
+    }
+
+    #[test]
+    fn lifecycle_initialized_to_processing() {
+        let proj = FileChangeProjection::new();
+        proj.initialize(&EventStore::new()).unwrap();
+
+        proj.start_processing().unwrap();
+        assert_eq!(proj.status(), ProjectionStatus::Processing);
+    }
+
+    #[test]
+    fn lifecycle_processing_to_failed() {
+        let proj = FileChangeProjection::new();
+        proj.initialize(&EventStore::new()).unwrap();
+        proj.start_processing().unwrap();
+
+        proj.mark_failed().unwrap();
+        assert_eq!(proj.status(), ProjectionStatus::Failed);
+    }
+
+    #[test]
+    fn lifecycle_failed_to_rebuilding() {
+        let proj = FileChangeProjection::new();
+        proj.initialize(&EventStore::new()).unwrap();
+        proj.start_processing().unwrap();
+        proj.mark_failed().unwrap();
+
+        proj.rebuild(&EventStore::new()).unwrap();
+        assert_eq!(proj.status(), ProjectionStatus::Initialized);
+    }
+
+    #[test]
+    fn lifecycle_processing_to_rebuilding() {
+        let proj = FileChangeProjection::new();
+        proj.initialize(&EventStore::new()).unwrap();
+        proj.start_processing().unwrap();
+
+        proj.rebuild(&EventStore::new()).unwrap();
+        assert_eq!(proj.status(), ProjectionStatus::Initialized);
+    }
+
+    #[test]
+    fn lifecycle_invalid_created_to_processing() {
+        let proj = FileChangeProjection::new();
+        let result = proj.start_processing();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lifecycle_invalid_failed_to_processing() {
+        let proj = FileChangeProjection::new();
+        proj.initialize(&EventStore::new()).unwrap();
+        proj.start_processing().unwrap();
+        proj.mark_failed().unwrap();
+
+        let result = proj.start_processing();
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Checkpoint tests (RFC-0002, Section 10)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn checkpoint_starts_at_zero() {
+        let proj = FileChangeProjection::new();
+        assert_eq!(proj.checkpoint(), 0);
+    }
+
+    #[test]
+    fn checkpoint_advances_on_process() {
+        let store = EventStore::new();
+        let proj = FileChangeProjection::new();
+
+        let e1 = store
+            .append(EventPayload::FileChanged(FileChanged {
+                path: PathBuf::from("a.txt"),
+                operation: FileOperation::Created,
+                timestamp: SystemTime::now(),
+            }))
+            .unwrap();
+        let e2 = store
+            .append(EventPayload::FileChanged(FileChanged {
+                path: PathBuf::from("b.txt"),
+                operation: FileOperation::Created,
+                timestamp: SystemTime::now(),
+            }))
+            .unwrap();
+
+        proj.process_event(&e1).unwrap();
+        assert_eq!(proj.checkpoint(), 1);
+
+        proj.process_event(&e2).unwrap();
+        assert_eq!(proj.checkpoint(), 2);
+    }
+
+    #[test]
+    fn checkpoint_resets_on_rebuild() {
+        let store = EventStore::new();
+        let proj = FileChangeProjection::new();
+
+        store
+            .append(EventPayload::FileChanged(FileChanged {
+                path: PathBuf::from("a.txt"),
+                operation: FileOperation::Created,
+                timestamp: SystemTime::now(),
+            }))
+            .unwrap();
+
+        // Process one event manually
+        let events = store.replay(1).unwrap();
+        proj.process_event(&events.events[0]).unwrap();
+        assert_eq!(proj.checkpoint(), 1);
+
+        // Rebuild resets checkpoint to 1 (only 1 event in store)
+        proj.rebuild(&store).unwrap();
+        assert_eq!(proj.checkpoint(), 1);
+    }
+
+    #[test]
+    fn rebuild_sets_checkpoint_to_last_event() {
+        let store = EventStore::new();
+        let proj = FileChangeProjection::new();
+
+        for i in 0..5 {
+            store
+                .append(EventPayload::FileChanged(FileChanged {
+                    path: PathBuf::from(format!("file_{}.txt", i)),
+                    operation: FileOperation::Created,
+                    timestamp: SystemTime::now(),
+                }))
+                .unwrap();
+        }
+
+        proj.rebuild(&store).unwrap();
+        assert_eq!(proj.checkpoint(), 5);
     }
 }

@@ -141,9 +141,11 @@ cargo clippy --workspace -- -D warnings
 | 2 | Documentation consolidation | ✅ Complete |
 | 3 | Documentation frozen | ✅ Complete |
 | 4 | RFC-0001: Kernel Event Store | ✅ Complete (in-memory) |
-| 5 | RFC-0002: Projection Engine | 📝 Draft |
-| 6 | Real AI provider | ⏳ Pending |
-| 7 | Remaining kernel capabilities | ⏳ Pending |
+| 5 | RFC-0002: Projection Engine | 🔨 In Progress |
+| 6 | RFC-0003: Observation Pipeline | ⏳ Pending |
+| 7 | RFC-0004: Execution Engine | ⏳ Pending |
+| 8 | Real AI provider | ⏳ Pending |
+| 9 | RFC-0005: AI Runtime Integration | ⏳ Pending |
 
 ---
 
@@ -152,7 +154,7 @@ cargo clippy --workspace -- -D warnings
 | RFC | Title | Status |
 |-----|-------|--------|
 | [RFC-0001](RFC/RFC-0001-kernel-event-store.md) | Kernel Event Store | Implemented |
-| [RFC-0002](RFC/RFC-0002-projection-engine.md) | Projection Engine | Draft |
+| [RFC-0002](RFC/RFC-0002-projection-engine.md) | Projection Engine | Implemented |
 | RFC-0003 | Observation Pipeline | Planned |
 | RFC-0004 | Execution Engine | Planned |
 | RFC-0005 | AI Runtime Integration | Planned |
