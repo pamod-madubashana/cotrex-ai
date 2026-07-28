@@ -45,6 +45,7 @@ Example: `ADR-0001-event-sourcing.md`
 | ADR-0003 | Closed Capability Protocol | Planned |
 | ADR-0004 | Cargo Workspace | Planned |
 | ADR-0005 | AI as Advisory Layer | Planned |
+| ADR-0006 | Event Store Persistence Strategy | Proposed |
 
 ---
 

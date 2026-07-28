@@ -74,10 +74,7 @@ impl FileChangeProjection {
 
     /// Get the current projection state.
     pub fn state(&self) -> HashMap<PathBuf, FileRecord> {
-        self.state
-            .lock()
-            .map(|s| s.clone())
-            .unwrap_or_default()
+        self.state.lock().map(|s| s.clone()).unwrap_or_default()
     }
 
     /// Get the number of tracked files.
@@ -87,7 +84,7 @@ impl FileChangeProjection {
 
     /// Get a specific file record.
     pub fn get_file(&self, path: &PathBuf) -> Option<FileRecord> {
-        self.state.lock().unwrap().get(path).cloned()
+        self.state.lock().ok().and_then(|s| s.get(path).cloned())
     }
 }
 
