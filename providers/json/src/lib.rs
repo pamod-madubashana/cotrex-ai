@@ -82,7 +82,7 @@ impl JsonProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use contract::RequestMetadata;
+    use contract::{ExplainRustRequest, RequestMetadata};
     use runtime::CapabilityProviderExt;
     use std::path::PathBuf;
 
