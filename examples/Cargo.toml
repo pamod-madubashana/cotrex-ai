@@ -1,0 +1,10 @@
+[package]
+name = "example-runner"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+contract = { path = "../contract" }
+runtime = { path = "../runtime" }
+mock = { path = "../providers/mock" }

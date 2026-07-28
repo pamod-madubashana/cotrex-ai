@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+    "contract",
+    "runtime",
+    "providers/mock",
+    "examples",
+]
