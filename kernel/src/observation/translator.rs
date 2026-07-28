@@ -12,7 +12,7 @@ pub struct RawObservation {
     pub operation: RawOperation,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RawOperation {
     Created,
     Modified,
@@ -40,9 +40,7 @@ impl Translator {
     /// Translate a raw observation into a FileChanged event payload.
     ///
     /// Returns one or two events for renames (delete + create).
-    pub fn translate(
-        observation: &RawObservation,
-    ) -> Result<Vec<EventPayload>, TranslationError> {
+    pub fn translate(observation: &RawObservation) -> Result<Vec<EventPayload>, TranslationError> {
         let mut events = Vec::new();
 
         match observation.operation {

@@ -1,6 +1,6 @@
 # RFC-0003: Observation Pipeline
 
-**Status:** Draft
+**Status:** Implemented
 **Milestone:** 6
 **Depends on:** RFC-0001 (Kernel Event Store)
 

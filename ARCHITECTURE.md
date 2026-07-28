@@ -234,7 +234,7 @@ Scope:
 - Multiple projection support
 - AI Context Projection
 
-### Milestone 6: Planned (RFC-0003)
+### Milestone 6: Completed (RFC-0003)
 
 Observation Pipeline.
 

@@ -1,5 +1,5 @@
 use crate::observation::translator::RawObservation;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------
 // Filter Decision (RFC-0003, Section 7)
@@ -115,60 +115,42 @@ mod tests {
     fn reject_git_directory() {
         let filter = test_filter();
         let obs = accept_obs("/project/.git/config");
-        assert!(matches!(
-            filter.filter(&obs),
-            FilterDecision::Reject { .. }
-        ));
+        assert!(matches!(filter.filter(&obs), FilterDecision::Reject { .. }));
     }
 
     #[test]
     fn reject_target_directory() {
         let filter = test_filter();
         let obs = accept_obs("/project/target/debug/binary");
-        assert!(matches!(
-            filter.filter(&obs),
-            FilterDecision::Reject { .. }
-        ));
+        assert!(matches!(filter.filter(&obs), FilterDecision::Reject { .. }));
     }
 
     #[test]
     fn reject_hidden_files() {
         let filter = test_filter();
         let obs = accept_obs("/project/.env");
-        assert!(matches!(
-            filter.filter(&obs),
-            FilterDecision::Reject { .. }
-        ));
+        assert!(matches!(filter.filter(&obs), FilterDecision::Reject { .. }));
     }
 
     #[test]
     fn reject_temp_files() {
         let filter = test_filter();
         let obs = accept_obs("/project/main.rs~");
-        assert!(matches!(
-            filter.filter(&obs),
-            FilterDecision::Reject { .. }
-        ));
+        assert!(matches!(filter.filter(&obs), FilterDecision::Reject { .. }));
     }
 
     #[test]
     fn reject_swap_files() {
         let filter = test_filter();
         let obs = accept_obs("/project/main.rs.swp");
-        assert!(matches!(
-            filter.filter(&obs),
-            FilterDecision::Reject { .. }
-        ));
+        assert!(matches!(filter.filter(&obs), FilterDecision::Reject { .. }));
     }
 
     #[test]
     fn reject_path_outside_root() {
         let filter = test_filter();
         let obs = accept_obs("/other/file.txt");
-        assert!(matches!(
-            filter.filter(&obs),
-            FilterDecision::Reject { .. }
-        ));
+        assert!(matches!(filter.filter(&obs), FilterDecision::Reject { .. }));
     }
 
     #[test]
@@ -177,9 +159,6 @@ mod tests {
         filter.add_ignore_pattern("node_modules".to_string());
 
         let obs = accept_obs("/project/node_modules/package/index.js");
-        assert!(matches!(
-            filter.filter(&obs),
-            FilterDecision::Reject { .. }
-        ));
+        assert!(matches!(filter.filter(&obs), FilterDecision::Reject { .. }));
     }
 }
