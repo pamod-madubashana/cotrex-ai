@@ -45,7 +45,7 @@ Example: `RFC-0001-kernel-event-store.md`
 | RFC-0001 | Kernel Event Store | Implemented |
 | RFC-0002 | Projection Engine | Implemented |
 | RFC-0003 | Observation Pipeline | Implemented |
-| RFC-0004 | Execution Engine | Planned |
+| RFC-0004 | Execution Engine | Draft |
 | RFC-0005 | AI Runtime Integration | Planned |
 | RFC-0006 | Observation Normalization | Planned |
 
