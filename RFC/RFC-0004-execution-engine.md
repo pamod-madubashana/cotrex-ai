@@ -1,6 +1,7 @@
 # RFC-0004: Execution Engine
 
-**Status:** Draft
+**Status:** Implemented
+**Version:** v0.7.0-rfc-0004-complete
 **Milestone:** 7
 **Depends on:** RFC-0001 (Kernel Event Store)
 

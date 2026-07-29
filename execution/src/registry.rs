@@ -1,3 +1,4 @@
+use crate::error::RegistryError;
 use crate::executor::Executor;
 use crate::request::ExecutionAction;
 use std::collections::HashMap;
@@ -15,7 +16,7 @@ use std::collections::HashMap;
 ///
 /// ```ignore
 /// let mut registry = ExecutorRegistry::new();
-/// registry.register(ExecutionActionDiscriminant::CommandRun, Box::new(cmd_executor));
+/// registry.register(ExecutionActionDiscriminant::CommandRun, Box::new(cmd_executor)).unwrap();
 /// ```
 pub struct ExecutorRegistry {
     executors: HashMap<ExecutionActionDiscriminant, Box<dyn Executor>>,
@@ -52,14 +53,18 @@ impl ExecutorRegistry {
 
     /// Register an executor for a given action discriminant.
     ///
-    /// If an executor was already registered for this discriminant, it is
-    /// replaced.
+    /// Returns [`RegistryError::DuplicateExecutor`] if an executor is
+    /// already registered for this discriminant.
     pub fn register(
         &mut self,
         discriminant: ExecutionActionDiscriminant,
         executor: Box<dyn Executor>,
-    ) {
+    ) -> Result<(), RegistryError> {
+        if self.executors.contains_key(&discriminant) {
+            return Err(RegistryError::DuplicateExecutor);
+        }
         self.executors.insert(discriminant, executor);
+        Ok(())
     }
 
     /// Look up the executor for a given action.
@@ -117,10 +122,12 @@ mod tests {
     #[test]
     fn register_and_lookup() {
         let mut registry = ExecutorRegistry::new();
-        registry.register(
-            ExecutionActionDiscriminant::CommandRun,
-            Box::new(DummyExecutor),
-        );
+        registry
+            .register(
+                ExecutionActionDiscriminant::CommandRun,
+                Box::new(DummyExecutor),
+            )
+            .unwrap();
 
         assert_eq!(registry.len(), 1);
         assert!(!registry.is_empty());
@@ -130,6 +137,25 @@ mod tests {
             working_directory: PathBuf::from("."),
         };
         assert!(registry.get(&action).is_some());
+    }
+
+    #[test]
+    fn duplicate_registration_rejected() {
+        let mut registry = ExecutorRegistry::new();
+        registry
+            .register(
+                ExecutionActionDiscriminant::CommandRun,
+                Box::new(DummyExecutor),
+            )
+            .unwrap();
+
+        let result = registry.register(
+            ExecutionActionDiscriminant::CommandRun,
+            Box::new(DummyExecutor),
+        );
+
+        assert_eq!(result, Err(RegistryError::DuplicateExecutor));
+        assert_eq!(registry.len(), 1);
     }
 
     #[test]

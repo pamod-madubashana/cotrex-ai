@@ -25,19 +25,25 @@ The protocol is the product. Models are implementation details.
                   ▼
           cotrex-ai Runtime
                   │
-                  ▼
-      Capability Provider API
-                  │
-      ┌───────────┼───────────┐
-      │           │           │
-  llama.cpp     Candle      ONNX
+        ┌─────────┴─────────┐
+        ▼                   ▼
+ Capability Provider     Execution Runtime
+        │                   │
+        ▼                   ▼
+ Inference Providers    Executor Registry
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+          Command       FileWrite      FileDelete
 ```
 
 **Layer 1: Kernel** — Owns project state, event sourcing, observation.
 
 **Layer 2: Intelligence Brain** — Orchestrates AI workflows, decides when to invoke capabilities.
 
-**Layer 3: cotrex-ai Runtime** — Provider abstraction, capability dispatch, error handling.
+**Layer 3: cotrex-ai Runtime** — Provider abstraction, capability dispatch, execution orchestration, and runtime error handling.
+
+**Execution Runtime** — Controlled capability execution through registered executors. Supports command execution and scoped filesystem operations while preserving event boundaries.
 
 **Layer 4: Inference Providers** — Implement `CapabilityProvider` trait, execute AI inference.
 
@@ -50,6 +56,7 @@ cotrex-ai/
 ├── contract/        # Protocol types (no logic, no providers)
 ├── runtime/         # CapabilityProvider trait + extension methods
 ├── kernel/          # Event Store, projections, event model
+├── execution/       # Execution engine, registry, and built-in executors
 ├── providers/
 │   ├── mock/        # Deterministic mock responses
 │   └── json/        # JSON fixture provider
@@ -119,6 +126,17 @@ cargo clippy --workspace -- -D warnings
 | `EventStore` | Append-only store with sequence ordering |
 | `FileChangeProjection` | Derives file state from events |
 
+### Execution Runtime
+
+| Type | Purpose |
+|------|---------|
+| `ExecutionEngine` | Orchestrates execution lifecycle and event recording |
+| `ExecutorRegistry` | Registers and resolves execution capabilities |
+| `CommandExecutor` | Executes OS commands with controlled output handling |
+| `FileWriteExecutor` | Writes files within a validated working directory |
+| `FileDeleteExecutor` | Deletes files within a validated working directory |
+| `ExecutionResult` | Transient execution output, including stdout/stderr |
+
 ---
 
 ## Documentation
@@ -143,9 +161,33 @@ cargo clippy --workspace -- -D warnings
 | 4 | RFC-0001: Kernel Event Store | ✅ Complete (in-memory) |
 | 5 | RFC-0002: Projection Engine | ✅ Complete |
 | 6 | RFC-0003: Observation Pipeline | ✅ Complete |
-| 7 | RFC-0004: Execution Engine | ⏳ Pending |
+| 7 | RFC-0004: Execution Engine | ✅ Complete |
 | 8 | Real AI provider | ⏳ Pending |
 | 9 | RFC-0005: AI Runtime Integration | ⏳ Pending |
+
+---
+
+## Current Status
+
+**v0.7.0-rfc-0004-complete**
+
+RFC-0004 Execution Engine is implemented and verified.
+
+Verified capabilities:
+
+- Event-driven execution lifecycle
+- Command execution
+- Scoped file writing
+- Scoped file deletion
+- Executor registry auto-wiring
+- Output isolation (stdout/stderr remain transient)
+- RFC invariant verification
+
+Test status:
+
+```text
+184 passed, 1 ignored
+```
 
 ---
 
@@ -156,7 +198,7 @@ cargo clippy --workspace -- -D warnings
 | [RFC-0001](RFC/RFC-0001-kernel-event-store.md) | Kernel Event Store | Implemented |
 | [RFC-0002](RFC/RFC-0002-projection-engine.md) | Projection Engine | Implemented |
 | [RFC-0003](RFC/RFC-0003-observation-pipeline.md) | Observation Pipeline | Implemented |
-| RFC-0004 | Execution Engine | Planned |
+| [RFC-0004](RFC/RFC-0004-execution-engine.md) | Execution Engine | Implemented |
 | RFC-0005 | AI Runtime Integration | Planned |
 
 ---

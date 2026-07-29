@@ -238,9 +238,20 @@ Scope:
 
 Observation Pipeline.
 
-### Milestone 7: Planned (RFC-0004)
+### Milestone 7: Completed (RFC-0004)
 
 Execution Engine.
+
+Scope:
+
+- ExecutionEngine orchestration
+- ExecutorRegistry with duplicate rejection
+- CommandExecutor (OS command execution)
+- FileWriteExecutor (sandboxed file writes)
+- FileDeleteExecutor (idempotent file deletion)
+- Shared path validation (absolute, traversal, symlink escape)
+- Event boundary: stdout/stderr never in events
+- 185+ tests passing
 
 ### Milestone 8: Planned
 

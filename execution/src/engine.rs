@@ -242,7 +242,9 @@ mod tests {
         let store = EventStore::new();
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
-        registry.register(ExecutionActionDiscriminant::CommandRun, Box::new(executor));
+        registry
+            .register(ExecutionActionDiscriminant::CommandRun, Box::new(executor))
+            .unwrap();
         ExecutionEngine::new(store, validator, registry)
     }
 
@@ -367,10 +369,12 @@ mod tests {
 
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
-        registry.register(
-            ExecutionActionDiscriminant::CommandRun,
-            Box::new(TrackExecutor),
-        );
+        registry
+            .register(
+                ExecutionActionDiscriminant::CommandRun,
+                Box::new(TrackExecutor),
+            )
+            .unwrap();
         let engine = ExecutionEngine::new(store, validator, registry);
 
         EXECUTOR_CALLED.store(false, Ordering::SeqCst);
@@ -415,10 +419,12 @@ mod tests {
         let store = EventStore::new();
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
-        registry.register(
-            ExecutionActionDiscriminant::CommandRun,
-            Box::new(CountExecutor),
-        );
+        registry
+            .register(
+                ExecutionActionDiscriminant::CommandRun,
+                Box::new(CountExecutor),
+            )
+            .unwrap();
         let engine = ExecutionEngine::new(store, validator, registry);
 
         CALL_COUNT.store(0, Ordering::SeqCst);
@@ -568,10 +574,12 @@ mod tests {
         let store = EventStore::with_capacity(1);
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
-        registry.register(
-            ExecutionActionDiscriminant::CommandRun,
-            Box::new(SucceedThenAppendFailExecutor),
-        );
+        registry
+            .register(
+                ExecutionActionDiscriminant::CommandRun,
+                Box::new(SucceedThenAppendFailExecutor),
+            )
+            .unwrap();
         let engine = ExecutionEngine::new(store, validator, registry);
 
         CALL_COUNT.store(0, Ordering::SeqCst);
@@ -643,10 +651,12 @@ mod tests {
         let store = EventStore::with_capacity(1);
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
-        registry.register(
-            ExecutionActionDiscriminant::CommandRun,
-            Box::new(FailThenAppendFailExecutor),
-        );
+        registry
+            .register(
+                ExecutionActionDiscriminant::CommandRun,
+                Box::new(FailThenAppendFailExecutor),
+            )
+            .unwrap();
         let engine = ExecutionEngine::new(store, validator, registry);
 
         CALL_COUNT.store(0, Ordering::SeqCst);

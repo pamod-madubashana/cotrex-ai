@@ -9,6 +9,7 @@ pub mod result;
 
 pub use engine::ExecutionEngine;
 pub use error::ExecutionError;
+pub use error::RegistryError;
 pub use events::{ExecutionCompleted, ExecutionFailed, ExecutionRequested};
 pub use executor::Executor;
 pub use executor::command::CommandExecutor;

@@ -23,6 +23,23 @@ pub enum ExecutionError {
     Internal(String),
 }
 
+/// Errors specific to executor registration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegistryError {
+    /// An executor is already registered for this discriminant.
+    DuplicateExecutor,
+}
+
+impl fmt::Display for RegistryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateExecutor => write!(f, "executor already registered for this action"),
+        }
+    }
+}
+
+impl std::error::Error for RegistryError {}
+
 impl fmt::Display for ExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
