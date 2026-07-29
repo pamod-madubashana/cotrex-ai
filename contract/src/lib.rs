@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use uuid::Uuid;
 
+pub mod provider_state;
+pub use provider_state::{ProviderState, ProviderStateError};
+
 // ---------------------------------------------------------------------------
 // Protocol version
 //
