@@ -4,9 +4,15 @@ use contract::{
 };
 use std::error::Error;
 
+pub mod adapter;
+pub mod lifecycle;
 pub mod local_model;
+pub mod local_provider;
 pub mod mock_model;
+pub use adapter::{adapt_request, adapt_response, RuntimeRequest};
+pub use lifecycle::ProviderLifecycle;
 pub use local_model::{InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt, ResolvedConfig};
+pub use local_provider::LocalProvider;
 pub use mock_model::MockLocalModel;
 
 // ---------------------------------------------------------------------------
@@ -42,6 +48,19 @@ pub enum RuntimeError {
 
     #[error("capability error: {0}")]
     Capability(#[from] CapabilityError),
+
+    #[error("model error: {0}")]
+    Model(String),
+}
+
+impl From<ProviderError> for RuntimeError {
+    fn from(err: ProviderError) -> Self {
+        match err {
+            ProviderError::Model(msg) => RuntimeError::Model(msg),
+            ProviderError::Config(msg) => RuntimeError::Model(msg),
+            ProviderError::State(e) => RuntimeError::Model(e.to_string()),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +177,9 @@ mod tests {
                 exit_code: 0,
                 stdout: String::new(),
                 stderr: String::new(),
+                prompt: "Summarize build: cargo build".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             })
             .unwrap();
         assert!(resp.success);
@@ -172,6 +194,9 @@ mod tests {
                 metadata: RequestMetadata::new(),
                 source: "let x = 1;".into(),
                 question: "what is x?".into(),
+                prompt: "Explain: what is x?\nlet x = 1;".into(),
+                temperature: 0.2,
+                max_tokens: 1024,
             })
             .unwrap();
         assert_eq!(resp.explanation, "about: what is x?");
@@ -187,6 +212,9 @@ mod tests {
                 exit_code: 1,
                 stdout: String::new(),
                 stderr: "error".into(),
+                prompt: "Summarize build: cargo build".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             })
             .unwrap();
         assert!(!resp.success);

@@ -113,6 +113,9 @@ mod tests {
                 exit_code: 0,
                 stdout: "Finished dev profile".into(),
                 stderr: String::new(),
+                prompt: "Summarize build: cargo build".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             })
             .unwrap();
         assert!(resp.success);
@@ -130,6 +133,9 @@ mod tests {
                 exit_code: 101,
                 stdout: String::new(),
                 stderr: "error[E0308]: mismatched types".into(),
+                prompt: "Summarize build: cargo build".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             })
             .unwrap();
         assert!(!resp.success);
@@ -150,6 +156,9 @@ mod tests {
                 exit_code: 102,
                 stdout: String::new(),
                 stderr: "linker error".into(),
+                prompt: "Summarize build: cargo build".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             })
             .unwrap();
         assert!(!resp.success);
@@ -166,6 +175,9 @@ mod tests {
                 exit_code: 99,
                 stdout: String::new(),
                 stderr: String::new(),
+                prompt: "Summarize build: cargo build".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             })
             .unwrap();
         assert!(!resp.success);
@@ -180,6 +192,9 @@ mod tests {
                 metadata: metadata(),
                 source: "fn main() {}".into(),
                 question: "what does this do?".into(),
+                prompt: "Explain: what does this do?\nfn main() {}".into(),
+                temperature: 0.2,
+                max_tokens: 1024,
             })
             .unwrap();
         assert!(resp.explanation.contains("defines functions"));
@@ -194,6 +209,9 @@ mod tests {
                 metadata: metadata(),
                 source: "let x = 42;".into(),
                 question: "explain".into(),
+                prompt: "Explain: explain\nlet x = 42;".into(),
+                temperature: 0.2,
+                max_tokens: 1024,
             })
             .unwrap();
         assert!(resp.explanation.contains("uses local variables"));
@@ -207,6 +225,9 @@ mod tests {
                 metadata: metadata(),
                 source: "impl Foo { fn bar() {} }".into(),
                 question: "what is this?".into(),
+                prompt: "Explain: what is this?\nimpl Foo { fn bar() {} }".into(),
+                temperature: 0.2,
+                max_tokens: 1024,
             })
             .unwrap();
         assert!(resp.explanation.contains("implements methods"));
@@ -220,6 +241,9 @@ mod tests {
                 metadata: metadata(),
                 source: "fn foo() { let x = 1; }".into(),
                 question: "explain".into(),
+                prompt: "Explain: explain\nfn foo() { let x = 1; }".into(),
+                temperature: 0.2,
+                max_tokens: 1024,
             })
             .unwrap();
         assert!(resp.explanation.contains("defines functions"));
@@ -234,6 +258,9 @@ mod tests {
                 metadata: metadata(),
                 source: String::new(),
                 question: "what?".into(),
+                prompt: "Explain: what?".into(),
+                temperature: 0.2,
+                max_tokens: 1024,
             })
             .unwrap();
         assert!(resp.explanation.contains("no notable Rust patterns"));
@@ -249,6 +276,9 @@ mod tests {
                 exit_code: 0,
                 stdout: "ok".into(),
                 stderr: String::new(),
+                prompt: "Summarize build: cargo test".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             }))
             .unwrap();
         assert!(matches!(resp, CapabilityResponse::BuildSummary(_)));
@@ -262,6 +292,9 @@ mod tests {
                 metadata: metadata(),
                 source: String::new(),
                 question: String::new(),
+                prompt: "Explain: ".into(),
+                temperature: 0.2,
+                max_tokens: 1024,
             }))
             .unwrap();
         assert!(matches!(resp, CapabilityResponse::ExplainRust(_)));

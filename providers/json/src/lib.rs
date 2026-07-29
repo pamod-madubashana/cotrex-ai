@@ -107,6 +107,9 @@ mod tests {
                 exit_code: 0,
                 stdout: "Finished dev profile".into(),
                 stderr: String::new(),
+                prompt: "Summarize build: cargo build".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             })
             .unwrap();
         assert!(resp.success);
@@ -124,6 +127,9 @@ mod tests {
                 exit_code: 101,
                 stdout: String::new(),
                 stderr: "error[E0308]: mismatched types".into(),
+                prompt: "Summarize build: cargo build".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             })
             .unwrap();
         assert!(!resp.success);
@@ -142,6 +148,9 @@ mod tests {
                 metadata: metadata(),
                 source: "fn fibonacci(n: u32) -> u32 { n }".into(),
                 question: "what does this do?".into(),
+                prompt: "Explain: what does this do?\nfn fibonacci(n: u32) -> u32 { n }".into(),
+                temperature: 0.2,
+                max_tokens: 1024,
             })
             .unwrap();
         assert!(resp.explanation.contains("Fibonacci"));
@@ -157,6 +166,9 @@ mod tests {
                 exit_code: 0,
                 stdout: String::new(),
                 stderr: String::new(),
+                prompt: "Summarize build: cargo test".into(),
+                temperature: 0.1,
+                max_tokens: 512,
             }))
             .unwrap();
         assert!(matches!(resp, CapabilityResponse::BuildSummary(_)));
@@ -171,6 +183,9 @@ mod tests {
             exit_code: 0,
             stdout: String::new(),
             stderr: String::new(),
+            prompt: "Summarize build: cargo build".into(),
+            temperature: 0.1,
+            max_tokens: 512,
         });
         assert!(resp.is_err());
     }

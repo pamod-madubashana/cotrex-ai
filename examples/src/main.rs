@@ -13,6 +13,9 @@ fn main() {
             exit_code: 0,
             stdout: "Finished release profile [optimized]".into(),
             stderr: String::new(),
+            prompt: "Summarize build: cargo build --release".into(),
+            temperature: 0.1,
+            max_tokens: 512,
         })
         .unwrap();
     println!("=== Build Summary (success) ===");
@@ -29,6 +32,9 @@ fn main() {
             exit_code: 101,
             stdout: String::new(),
             stderr: "error[E0308]: mismatched types\n --> src/main.rs:5:12".into(),
+            prompt: "Summarize build: cargo build".into(),
+            temperature: 0.1,
+            max_tokens: 512,
         })
         .unwrap();
     println!("=== Build Summary (failure) ===");
@@ -52,6 +58,9 @@ fn fibonacci(n: u32) -> u32 {
 "#
             .into(),
             question: "What does this function do?".into(),
+            prompt: "Explain: What does this function do?\nfn fibonacci(n: u32) -> u32 { ... }".into(),
+            temperature: 0.2,
+            max_tokens: 1024,
         })
         .unwrap();
     println!("=== Explain Rust ===");

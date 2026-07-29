@@ -90,20 +90,26 @@ impl RequestMetadata {
 // Request types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BuildSummaryRequest {
     pub metadata: RequestMetadata,
     pub command: String,
     pub exit_code: i32,
     pub stdout: String,
     pub stderr: String,
+    pub prompt: String,
+    pub temperature: f32,
+    pub max_tokens: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExplainRustRequest {
     pub metadata: RequestMetadata,
     pub source: String,
     pub question: String,
+    pub prompt: String,
+    pub temperature: f32,
+    pub max_tokens: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +174,9 @@ mod tests {
             exit_code: 1,
             stdout: String::new(),
             stderr: "error[E0308]: mismatched types".into(),
+            prompt: "Summarize build: cargo build".into(),
+            temperature: 0.1,
+            max_tokens: 512,
         };
         let json = serde_json::to_string(&req).unwrap();
         let back: BuildSummaryRequest = serde_json::from_str(&json).unwrap();
@@ -205,6 +214,9 @@ mod tests {
             metadata: RequestMetadata::new(),
             source: "fn main() {}".into(),
             question: "what does this do?".into(),
+            prompt: "Explain: what does this do?\nfn main() {}".into(),
+            temperature: 0.2,
+            max_tokens: 1024,
         };
         let json = serde_json::to_string(&req).unwrap();
         let back: ExplainRustRequest = serde_json::from_str(&json).unwrap();
@@ -229,6 +241,9 @@ mod tests {
             exit_code: 0,
             stdout: "ok".into(),
             stderr: String::new(),
+            prompt: "test prompt".into(),
+            temperature: 0.1,
+            max_tokens: 100,
         });
         let _cloned = cap.clone();
     }
