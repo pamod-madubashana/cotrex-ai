@@ -5,6 +5,7 @@ members = [
     "runtime",
     "kernel",
     "execution",
+    "agent",
     "providers/mock",
     "providers/json",
     "examples",

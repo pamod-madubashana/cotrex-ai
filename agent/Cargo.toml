@@ -1,0 +1,9 @@
+[package]
+name = "agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+execution = { path = "../execution" }
+kernel = { path = "../kernel" }
+uuid = { version = "1", features = ["v4"] }
