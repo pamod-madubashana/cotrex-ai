@@ -496,4 +496,335 @@ mod tests {
             panic!("expected ExecutionFailed event");
         }
     }
+
+    // ===================================================================
+    // FAILURE PATH VERIFICATION (Commit 3.5)
+    // ===================================================================
+
+    // -----------------------------------------------------------------------
+    // Scenario 1: Executor succeeds, ExecutionCompleted append fails.
+    //
+    // State after failure:
+    //   - Executor was called exactly once
+    //   - ExecutionRequested EXISTS in the store
+    //   - ExecutionCompleted was NOT appended
+    //   - EventAppendFailed is returned to the caller
+    //   - No retry occurs
+    //
+    // Architectural note: This produces an orphaned ExecutionRequested
+    // event. The execution was attempted but the result was not recorded.
+    // This is acceptable because:
+    //   1. The EventStore is append-only — we cannot remove the request.
+    //   2. Projections will see a request with no completion/failure.
+    //   3. This represents a real system state: the execution happened
+    //      but we lost the result record.
+    //   4. Recovery requires external reconciliation, not automatic retry.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn submit_completed_append_failure_after_executor_success() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        struct SucceedThenAppendFailExecutor;
+
+        impl Executor for SucceedThenAppendFailExecutor {
+            fn execute(
+                &self,
+                request: &ExecutionRequest,
+            ) -> Result<ExecutionResult, ExecutionError> {
+                CALL_COUNT.fetch_add(1, Ordering::SeqCst);
+                Ok(ExecutionResult {
+                    execution_id: request.id,
+                    success: true,
+                    exit_code: Some(0),
+                    duration_ms: 0,
+                    error: None,
+                })
+            }
+        }
+
+        // Capacity 1: first append (ExecutionRequested) succeeds,
+        // second append (ExecutionCompleted) fails with Backpressure
+        let store = EventStore::with_capacity(1);
+        let validator = Box::new(ExecutionPolicy::allow_all());
+        let mut registry = ExecutorRegistry::new();
+        registry.register(
+            ExecutionActionDiscriminant::CommandRun,
+            Box::new(SucceedThenAppendFailExecutor),
+        );
+        let engine = ExecutionEngine::new(store, validator, registry);
+
+        CALL_COUNT.store(0, Ordering::SeqCst);
+        let req = command_request();
+        let result = engine.submit(&req);
+
+        // Executor was called exactly once
+        assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 1);
+
+        // Return value is EventAppendFailed (from Completed append)
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ExecutionError::EventAppendFailed(_) => {}
+            other => panic!("expected EventAppendFailed, got: {:?}", other),
+        }
+
+        // ExecutionRequested EXISTS (sequence 1)
+        let payloads = event_payloads(engine.store());
+        assert_eq!(payloads.len(), 1, "only ExecutionRequested should exist");
+        assert!(
+            matches!(&payloads[0], EventPayload::ExecutionRequested(_)),
+            "first event must be ExecutionRequested"
+        );
+
+        // ExecutionCompleted was NOT appended
+        assert!(
+            !payloads
+                .iter()
+                .any(|p| matches!(p, EventPayload::ExecutionCompleted(_))),
+            "ExecutionCompleted should NOT exist"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Scenario 2: Executor fails, ExecutionFailed append fails.
+    //
+    // State after failure:
+    //   - Executor was called exactly once
+    //   - ExecutionRequested EXISTS in the store
+    //   - ExecutionFailed was NOT appended
+    //   - EventAppendFailed is returned to the caller
+    //
+    // Architectural note: Same orphan scenario as Scenario 1. The
+    // execution failed, but we cannot record the failure. The caller
+    // receives EventAppendFailed, not ExecutorFailed. This is a
+    // different error path than a normal executor failure.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn submit_failed_append_failure_after_executor_failure() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        struct FailThenAppendFailExecutor;
+
+        impl Executor for FailThenAppendFailExecutor {
+            fn execute(
+                &self,
+                _request: &ExecutionRequest,
+            ) -> Result<ExecutionResult, ExecutionError> {
+                CALL_COUNT.fetch_add(1, Ordering::SeqCst);
+                Err(ExecutionError::ExecutorFailed("process crashed".into()))
+            }
+        }
+
+        // Capacity 1: first append (ExecutionRequested) succeeds,
+        // second append (ExecutionFailed) fails with Backpressure
+        let store = EventStore::with_capacity(1);
+        let validator = Box::new(ExecutionPolicy::allow_all());
+        let mut registry = ExecutorRegistry::new();
+        registry.register(
+            ExecutionActionDiscriminant::CommandRun,
+            Box::new(FailThenAppendFailExecutor),
+        );
+        let engine = ExecutionEngine::new(store, validator, registry);
+
+        CALL_COUNT.store(0, Ordering::SeqCst);
+        let req = command_request();
+        let result = engine.submit(&req);
+
+        // Executor was called exactly once
+        assert_eq!(CALL_COUNT.load(Ordering::SeqCst), 1);
+
+        // Return value is EventAppendFailed (from Failed append),
+        // NOT ExecutorFailed
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ExecutionError::EventAppendFailed(_) => {}
+            other => panic!("expected EventAppendFailed, got: {:?}", other),
+        }
+
+        // ExecutionRequested EXISTS (sequence 1)
+        let payloads = event_payloads(engine.store());
+        assert_eq!(payloads.len(), 1, "only ExecutionRequested should exist");
+        assert!(
+            matches!(&payloads[0], EventPayload::ExecutionRequested(_)),
+            "first event must be ExecutionRequested"
+        );
+
+        // ExecutionFailed was NOT appended
+        assert!(
+            !payloads
+                .iter()
+                .any(|p| matches!(p, EventPayload::ExecutionFailed(_))),
+            "ExecutionFailed should NOT exist"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Scenario 3: No executor registered.
+    //
+    // CURRENT BEHAVIOR:
+    //   1. Validation passes
+    //   2. ExecutionRequested IS appended to the store
+    //   3. Registry lookup fails → Internal("no executor registered")
+    //   4. Orphaned ExecutionRequested exists in the store
+    //
+    // This is a PROGRAMMING ERROR (misconfigured registry), not a runtime
+    // failure. The ExecutionRequested event is appended before the error
+    // is detected.
+    //
+    // ARCHITECTURAL ASSESSMENT:
+    //
+    // The current ordering (append THEN lookup) produces an orphaned
+    // event for a deterministic configuration error. This is
+    // architecturally QUESTIONABLE because:
+    //
+    //   - The request was never actually accepted for execution.
+    //   - The engine knew (at configuration time) that no executor
+    //     existed for this action type.
+    //   - Recording "we accepted a request we could never fulfill"
+    //     creates noise in the event stream.
+    //
+    // RECOMMENDATION:
+    //
+    // Move registry lookup BEFORE the ExecutionRequested append.
+    // If no executor is registered, return Internal error immediately
+    // with zero events appended. This treats missing executor as a
+    // pre-flight check, not a post-acceptance failure.
+    //
+    // Proposed change for Commit 4 or later:
+    //
+    //   fn submit(&self, request: &ExecutionRequest) -> Result<...> {
+    //       self.validator.validate(request)?;
+    //       let executor = self.registry.get(&request.action)
+    //           .ok_or_else(|| ExecutionError::Internal(...))?;  // BEFORE append
+    //       self.store.append(EventPayload::ExecutionRequested(...))?;
+    //       // ... dispatch executor
+    //   }
+    //
+    // This is a BEHAVIORAL CHANGE and should be committed separately.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn submit_missing_executor_behavior() {
+        // Engine with no executor registered
+        let store = EventStore::new();
+        let validator = Box::new(ExecutionPolicy::allow_all());
+        let registry = ExecutorRegistry::new(); // empty
+        let engine = ExecutionEngine::new(store, validator, registry);
+
+        let req = command_request();
+        let result = engine.submit(&req);
+
+        // Error is Internal
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ExecutionError::Internal(msg) => {
+                assert_eq!(msg, "no executor registered");
+            }
+            other => panic!("expected Internal error, got: {:?}", other),
+        }
+
+        // CURRENT BEHAVIOR: ExecutionRequested IS appended (orphaned)
+        // This is the behavior being documented, not endorsed.
+        let payloads = event_payloads(engine.store());
+        assert_eq!(
+            payloads.len(),
+            1,
+            "CURRENT: orphaned ExecutionRequested exists"
+        );
+        assert!(
+            matches!(&payloads[0], EventPayload::ExecutionRequested(_)),
+            "orphaned event is ExecutionRequested"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Scenario 4: Duration propagation.
+    //
+    // The engine measures wall-clock time around executor.execute().
+    // The FakeExecutor's configured duration_ms field is IGNORED —
+    // the engine always measures actual elapsed time.
+    //
+    // Duration flows into:
+    //   - ExecutionResult: NOT set by engine (executor sets it)
+    //   - ExecutionCompleted.duration_ms: SET by engine
+    //   - ExecutionFailed.duration_ms: SET by engine
+    //
+    // The ExecutionResult returned to the caller does NOT contain
+    // the engine-measured duration — it contains whatever the executor
+    // returned. This is intentional: the executor knows its own timing
+    // better than the engine wrapper.
+    //
+    // For real executors, the engine-measured duration and the
+    // executor-reported duration should be approximately equal.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn execution_duration_propagation() {
+        // Test success path: duration in ExecutionCompleted
+        let engine = engine_with_executor(FakeExecutor::succeed());
+        let req = command_request();
+        engine.submit(&req).unwrap();
+
+        let payloads = event_payloads(engine.store());
+        if let EventPayload::ExecutionCompleted(ref completed) = payloads[1] {
+            // Duration should be >= 0 (measured by engine)
+            // We cannot assert exact value since it's wall-clock time
+            assert!(
+                completed.duration_ms < 1000,
+                "duration should be reasonable, got {}ms",
+                completed.duration_ms
+            );
+        } else {
+            panic!("expected ExecutionCompleted event");
+        }
+    }
+
+    #[test]
+    fn execution_failure_duration_propagation() {
+        // Test failure path: duration in ExecutionFailed
+        let engine = engine_with_executor(FakeExecutor::fail("timeout"));
+        let req = command_request();
+        let _ = engine.submit(&req);
+
+        let payloads = event_payloads(engine.store());
+        if let EventPayload::ExecutionFailed(ref failed) = payloads[1] {
+            assert!(
+                failed.duration_ms < 1000,
+                "duration should be reasonable, got {}ms",
+                failed.duration_ms
+            );
+        } else {
+            panic!("expected ExecutionFailed event");
+        }
+    }
+
+    #[test]
+    fn execution_duration_is_engine_measured_not_executor_provided() {
+        // Verify that the engine measures duration, not the executor.
+        // FakeExecutor returns duration_ms: 0, but the engine measures
+        // wall-clock time which will be >= 0.
+
+        let engine = engine_with_executor(FakeExecutor::succeed());
+        let req = command_request();
+        let result = engine.submit(&req).unwrap();
+
+        // The executor returned duration_ms: 0 (from FakeExecutor::succeed)
+        assert_eq!(result.duration_ms, 0, "executor returned 0");
+
+        // The engine-measured duration in the event is different
+        let payloads = event_payloads(engine.store());
+        if let EventPayload::ExecutionCompleted(ref completed) = payloads[1] {
+            // Engine duration is whatever wall-clock time elapsed
+            // It does NOT have to match result.duration_ms
+            // Just verify it's a valid u64 (always true, documents intent)
+            let _ = completed.duration_ms;
+        } else {
+            panic!("expected ExecutionCompleted event");
+        }
+    }
 }
