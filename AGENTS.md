@@ -29,6 +29,7 @@ Single crate: `rtk cargo test -p contract`
 ```
 contract/     → protocol types only (no logic, no providers)
 runtime/      → CapabilityProvider trait + extension methods
+kernel/       → event-sourced kernel (EventStore, projections, observation pipeline)
 providers/    → provider implementations (mock, json-fixture)
 examples/     → usage examples (binary: example-runner)
 fixtures/     → JSON response fixtures
@@ -39,6 +40,8 @@ fixtures/     → JSON response fixtures
 **Layer model:**
 - Kernel → Intelligence Brain → cotrex-ai Runtime → Providers
 - No layer depends on layers below it.
+
+**Kernel independence:** `kernel/` does NOT depend on `contract/` or `runtime/`. It has only `thiserror` and `uuid` as dependencies. It is a standalone crate.
 
 ## Error Split
 
@@ -70,12 +73,32 @@ pub trait CapabilityProvider: Send + Sync {
 - Prompt building is private to each provider.
 - The API is synchronous. Inference is CPU-bound.
 
+## Kernel Modules
+
+- `event.rs` — `Event`, `EventPayload`, `FileChanged`, `FileOperation`
+- `store.rs` — `EventStore` (in-memory, append-only, with backpressure)
+- `projection.rs` — `FileChangeProjection`, `ProjectionStatus` lifecycle
+- `ai_context.rs` — `AiContextProjection` (semantic summary for AI)
+- `engine.rs` — `ProjectionEngine` (multi-projection coordination, failure isolation)
+- `observation/pipeline.rs` — `ObservationPipeline` (filter → translate → append)
+- `observation/filter.rs` — `ObservationFilter` (ignore patterns, dotfiles, temp files)
+- `observation/translator.rs` — `Translator` (raw observations → event payloads)
+
 ## Verification
 
 - Edition: 2024
 - All protocol types derive `Debug, Clone, Serialize, Deserialize, PartialEq, Eq`
 - `MockProvider` returns deterministic responses — no randomness, no AI
 - `CapabilityProviderExt` provides ergonomic `.build_summary()` and `.explain_rust()` methods
+
+## Report Requirement
+
+After every implementation task is completed, generate a status report covering:
+1. Test suite results (pass/fail counts per crate)
+2. Any RFC or ADR changes
+3. Files modified with line counts
+4. Git status and recent commits
+5. Dependency graph changes (if any)
 
 ## Tools
 

@@ -182,6 +182,44 @@ impl Default for ProjectionEngine {
 }
 
 // ---------------------------------------------------------------------------
+// Projection trait impl for FileChangeProjection
+// ---------------------------------------------------------------------------
+
+impl Projection for FileChangeProjection {
+    fn name(&self) -> &str {
+        "FileChange"
+    }
+
+    fn status(&self) -> ProjectionStatus {
+        FileChangeProjection::status(self)
+    }
+
+    fn checkpoint(&self) -> u64 {
+        FileChangeProjection::checkpoint(self)
+    }
+
+    fn process_event(&self, event: &Event) -> Result<(), EventStoreError> {
+        FileChangeProjection::process_event(self, event)
+    }
+
+    fn rebuild(&self, store: &EventStore) -> Result<(), EventStoreError> {
+        FileChangeProjection::rebuild(self, store)
+    }
+
+    fn initialize(&self, store: &EventStore) -> Result<(), EventStoreError> {
+        FileChangeProjection::initialize(self, store)
+    }
+
+    fn start_processing(&self) -> Result<(), EventStoreError> {
+        FileChangeProjection::start_processing(self)
+    }
+
+    fn mark_failed(&self) -> Result<(), EventStoreError> {
+        FileChangeProjection::mark_failed(self)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -504,43 +542,5 @@ mod tests {
 
         // EventStore must be unchanged by projection failure
         assert_eq!(store.len(), store_len_before + 1); // only the append we did
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Projection trait impl for FileChangeProjection
-// ---------------------------------------------------------------------------
-
-impl Projection for FileChangeProjection {
-    fn name(&self) -> &str {
-        "FileChange"
-    }
-
-    fn status(&self) -> ProjectionStatus {
-        FileChangeProjection::status(self)
-    }
-
-    fn checkpoint(&self) -> u64 {
-        FileChangeProjection::checkpoint(self)
-    }
-
-    fn process_event(&self, event: &Event) -> Result<(), EventStoreError> {
-        FileChangeProjection::process_event(self, event)
-    }
-
-    fn rebuild(&self, store: &EventStore) -> Result<(), EventStoreError> {
-        FileChangeProjection::rebuild(self, store)
-    }
-
-    fn initialize(&self, store: &EventStore) -> Result<(), EventStoreError> {
-        FileChangeProjection::initialize(self, store)
-    }
-
-    fn start_processing(&self) -> Result<(), EventStoreError> {
-        FileChangeProjection::start_processing(self)
-    }
-
-    fn mark_failed(&self) -> Result<(), EventStoreError> {
-        FileChangeProjection::mark_failed(self)
     }
 }

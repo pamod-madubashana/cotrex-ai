@@ -4,6 +4,7 @@ members = [
     "contract",
     "runtime",
     "kernel",
+    "execution",
     "providers/mock",
     "providers/json",
     "examples",

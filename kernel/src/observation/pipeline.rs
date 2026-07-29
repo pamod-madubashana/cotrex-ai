@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn translation_failure_path_unreachable() {
         let pipeline = test_pipeline();
-        let store = EventStore::new();
+        let _store = EventStore::new();
 
         pipeline.initialize().unwrap();
         pipeline.start_watching().unwrap();
