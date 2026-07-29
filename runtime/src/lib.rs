@@ -4,6 +4,30 @@ use contract::{
 };
 use std::error::Error;
 
+pub mod local_model;
+pub mod mock_model;
+pub use local_model::{InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt, ResolvedConfig};
+pub use mock_model::MockLocalModel;
+
+// ---------------------------------------------------------------------------
+// Provider error
+//
+// Errors from model operations (load, infer, unload). Distinct from
+// RuntimeError which handles protocol-level errors.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProviderError {
+    #[error("model error: {0}")]
+    Model(String),
+
+    #[error("config error: {0}")]
+    Config(String),
+
+    #[error("state error: {0}")]
+    State(#[from] contract::ProviderStateError),
+}
+
 // ---------------------------------------------------------------------------
 // Runtime error
 // ---------------------------------------------------------------------------
