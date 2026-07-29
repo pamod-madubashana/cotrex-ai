@@ -1,5 +1,7 @@
 pub mod command;
+pub mod file_delete;
 pub mod file_write;
+pub mod path_validation;
 
 use crate::error::ExecutionError;
 use crate::request::ExecutionRequest;

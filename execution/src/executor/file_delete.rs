@@ -7,23 +7,24 @@ use crate::executor::path_validation::{resolve_within, validate_raw_path};
 use crate::request::{ExecutionAction, ExecutionRequest};
 use crate::result::ExecutionResult;
 
-/// Writes file contents to the filesystem within a working directory scope.
+/// Deletes files from the filesystem within a working directory scope.
 ///
-/// All writes are confined to the provided working directory. Path validation
+/// All deletions are confined to the provided working directory. Path validation
 /// rejects absolute paths, parent traversal, and symlink escapes.
-pub struct FileWriteExecutor;
+///
+/// Delete is idempotent: missing files are treated as successful no-ops.
+pub struct FileDeleteExecutor;
 
-impl Executor for FileWriteExecutor {
+impl Executor for FileDeleteExecutor {
     fn execute(&self, request: &ExecutionRequest) -> Result<ExecutionResult, ExecutionError> {
-        let (rel_path, content, working_directory) = match &request.action {
-            ExecutionAction::FileWrite {
+        let (rel_path, working_directory) = match &request.action {
+            ExecutionAction::FileDelete {
                 path,
-                content,
                 working_directory,
-            } => (path, content.as_slice(), working_directory),
+            } => (path, working_directory),
             other => {
                 return Err(ExecutionError::Internal(format!(
-                    "FileWriteExecutor received non-FileWrite action: {:?}",
+                    "FileDeleteExecutor received non-FileDelete action: {:?}",
                     other
                 )));
             }
@@ -35,17 +36,12 @@ impl Executor for FileWriteExecutor {
 
         let start = Instant::now();
 
-        if let Some(parent) = resolved.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                ExecutionError::ExecutorFailed(format!(
-                    "failed to create parent directories: {}",
-                    e
-                ))
+        // Idempotent: missing file is a successful no-op
+        if resolved.exists() {
+            fs::remove_file(&resolved).map_err(|e| {
+                ExecutionError::ExecutorFailed(format!("file delete failed: {}", e))
             })?;
         }
-
-        fs::write(&resolved, content)
-            .map_err(|e| ExecutionError::ExecutorFailed(format!("file write failed: {}", e)))?;
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -67,11 +63,10 @@ mod tests {
     use crate::request::ExecutionAction;
     use std::path::{Path, PathBuf};
 
-    fn write_request(path: &str, content: &[u8], working_directory: &Path) -> ExecutionRequest {
+    fn delete_request(path: &str, working_directory: &Path) -> ExecutionRequest {
         ExecutionRequest::new(
-            ExecutionAction::FileWrite {
+            ExecutionAction::FileDelete {
                 path: PathBuf::from(path),
-                content: content.to_vec(),
                 working_directory: working_directory.to_path_buf(),
             },
             vec![],
@@ -79,71 +74,44 @@ mod tests {
     }
 
     #[test]
-    fn basic_write() {
+    fn delete_existing_file() {
         let dir = tempfile::tempdir().unwrap();
-        let executor = FileWriteExecutor;
-        let req = write_request("test.txt", b"hello world", dir.path());
+        let file_path = dir.path().join("to_delete.txt");
+        fs::write(&file_path, b"content").unwrap();
+        assert!(file_path.exists());
+
+        let executor = FileDeleteExecutor;
+        let req = delete_request("to_delete.txt", dir.path());
         let result = executor.execute(&req).unwrap();
 
         assert!(result.success);
         assert_eq!(result.exit_code, Some(0));
-
-        let written = fs::read(dir.path().join("test.txt")).unwrap();
-        assert_eq!(written, b"hello world");
+        assert!(!file_path.exists());
     }
 
     #[test]
-    fn binary_content() {
+    fn delete_missing_file_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
-        let executor = FileWriteExecutor;
-        let binary: Vec<u8> = (0..=255).collect();
-        let req = write_request("binary.bin", &binary, dir.path());
+
+        let executor = FileDeleteExecutor;
+        let req = delete_request("does_not_exist.txt", dir.path());
         let result = executor.execute(&req).unwrap();
 
         assert!(result.success);
-
-        let written = fs::read(dir.path().join("binary.bin")).unwrap();
-        assert_eq!(written, binary);
-    }
-
-    #[test]
-    fn overwrite_existing_file() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("existing.txt"), b"old content").unwrap();
-
-        let executor = FileWriteExecutor;
-        let req = write_request("existing.txt", b"new content", dir.path());
-        executor.execute(&req).unwrap();
-
-        let written = fs::read(dir.path().join("existing.txt")).unwrap();
-        assert_eq!(written, b"new content");
-    }
-
-    #[test]
-    fn create_parent_directories() {
-        let dir = tempfile::tempdir().unwrap();
-        let executor = FileWriteExecutor;
-        let req = write_request("a/b/c/file.txt", b"nested", dir.path());
-        let result = executor.execute(&req).unwrap();
-
-        assert!(result.success);
-
-        let written = fs::read(dir.path().join("a/b/c/file.txt")).unwrap();
-        assert_eq!(written, b"nested");
+        assert_eq!(result.exit_code, Some(0));
     }
 
     #[test]
     fn reject_absolute_path() {
         let dir = tempfile::tempdir().unwrap();
-        let executor = FileWriteExecutor;
+        let executor = FileDeleteExecutor;
 
-        // Use a path that is absolute on the current platform
         #[cfg(windows)]
-        let abs_path = "C:\\tmp\\test.txt";
+        let abs_path = "C:\\tmp\\file.txt";
         #[cfg(not(windows))]
-        let abs_path = "/tmp/test.txt";
+        let abs_path = "/tmp/file.txt";
 
-        let req = write_request(abs_path, b"bad", dir.path());
+        let req = delete_request(abs_path, dir.path());
         let result = executor.execute(&req);
 
         match result {
@@ -163,8 +131,8 @@ mod tests {
     #[test]
     fn reject_traversal_path() {
         let dir = tempfile::tempdir().unwrap();
-        let executor = FileWriteExecutor;
-        let req = write_request("../escape.txt", b"bad", dir.path());
+        let executor = FileDeleteExecutor;
+        let req = delete_request("../escape.txt", dir.path());
         let result = executor.execute(&req);
 
         match result {
@@ -178,8 +146,8 @@ mod tests {
     #[test]
     fn reject_nested_traversal() {
         let dir = tempfile::tempdir().unwrap();
-        let executor = FileWriteExecutor;
-        let req = write_request("src/../../escape.txt", b"bad", dir.path());
+        let executor = FileDeleteExecutor;
+        let req = delete_request("src/../../escape.txt", dir.path());
         let result = executor.execute(&req);
 
         match result {
@@ -199,8 +167,11 @@ mod tests {
         // Create symlink: working_dir/link -> outside_dir
         std::os::unix::fs::symlink(outside.path(), dir.path().join("link")).unwrap();
 
-        let executor = FileWriteExecutor;
-        let req = write_request("link/escaped.txt", b"bad", dir.path());
+        // Create a file in the outside directory
+        fs::write(outside.path().join("target.txt"), b"secret").unwrap();
+
+        let executor = FileDeleteExecutor;
+        let req = delete_request("link/target.txt", dir.path());
         let result = executor.execute(&req);
 
         match result {
@@ -213,6 +184,9 @@ mod tests {
             }
             other => panic!("expected ExecutorFailed, got: {:?}", other),
         }
+
+        // Verify the file was NOT deleted
+        assert!(outside.path().join("target.txt").exists());
     }
 
     #[cfg(windows)]
@@ -223,8 +197,8 @@ mod tests {
     }
 
     #[test]
-    fn non_file_write_action_returns_error() {
-        let executor = FileWriteExecutor;
+    fn non_file_delete_action_returns_error() {
+        let executor = FileDeleteExecutor;
         let req = ExecutionRequest::new(
             ExecutionAction::CommandRun {
                 command: "echo hello".into(),
@@ -236,7 +210,7 @@ mod tests {
 
         match result {
             Err(ExecutionError::Internal(msg)) => {
-                assert!(msg.contains("non-FileWrite"));
+                assert!(msg.contains("non-FileDelete"));
             }
             other => panic!("expected Internal error, got: {:?}", other),
         }

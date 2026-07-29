@@ -48,8 +48,10 @@ pub enum ExecutionAction {
     },
     /// Delete a file.
     FileDelete {
-        /// The file path to remove.
+        /// The file path to remove (relative to working directory).
         path: PathBuf,
+        /// The working directory for file operations.
+        working_directory: PathBuf,
     },
 }
 
@@ -109,6 +111,7 @@ mod tests {
     fn request_new_generates_id() {
         let action = ExecutionAction::FileDelete {
             path: PathBuf::from("/tmp/file.txt"),
+            working_directory: PathBuf::from("."),
         };
         let req = ExecutionRequest::new(action, vec![Capability::FileDelete]);
         assert_eq!(req.required_capabilities, vec![Capability::FileDelete]);

@@ -137,6 +137,7 @@ mod tests {
         let registry = ExecutorRegistry::new();
         let action = ExecutionAction::FileDelete {
             path: PathBuf::from("/tmp/file"),
+            working_directory: PathBuf::from("."),
         };
         assert!(registry.get(&action).is_none());
     }
@@ -154,6 +155,7 @@ mod tests {
         };
         let delete = ExecutionAction::FileDelete {
             path: PathBuf::from("/tmp/file"),
+            working_directory: PathBuf::from("."),
         };
 
         assert_eq!(

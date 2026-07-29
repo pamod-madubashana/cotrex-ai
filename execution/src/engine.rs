@@ -99,7 +99,7 @@ impl ExecutionEngine {
                 crate::request::ExecutionAction::FileWrite { path, .. } => {
                     format!("write:{}", path.display())
                 }
-                crate::request::ExecutionAction::FileDelete { path } => {
+                crate::request::ExecutionAction::FileDelete { path, .. } => {
                     format!("delete:{}", path.display())
                 }
             },
@@ -107,8 +107,12 @@ impl ExecutionEngine {
                 crate::request::ExecutionAction::CommandRun {
                     working_directory, ..
                 } => working_directory.clone(),
-                crate::request::ExecutionAction::FileWrite { path, .. } => path.clone(),
-                crate::request::ExecutionAction::FileDelete { path } => path.clone(),
+                crate::request::ExecutionAction::FileWrite {
+                    working_directory, ..
+                } => working_directory.clone(),
+                crate::request::ExecutionAction::FileDelete {
+                    working_directory, ..
+                } => working_directory.clone(),
             },
             requested_at: SystemTime::now(),
         };
