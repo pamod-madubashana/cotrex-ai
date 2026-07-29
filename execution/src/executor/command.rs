@@ -244,6 +244,7 @@ mod tests {
             ExecutionAction::FileWrite {
                 path: PathBuf::from("test.txt"),
                 content: b"hello".to_vec(),
+                working_directory: PathBuf::from("."),
             },
             vec![],
         );

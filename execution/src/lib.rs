@@ -12,6 +12,7 @@ pub use error::ExecutionError;
 pub use events::{ExecutionCompleted, ExecutionFailed, ExecutionRequested};
 pub use executor::Executor;
 pub use executor::command::CommandExecutor;
+pub use executor::file_write::FileWriteExecutor;
 pub use policy::{CapabilityValidator, ExecutionPolicy};
 pub use registry::{ExecutionActionDiscriminant, ExecutorRegistry};
 pub use request::{Capability, ExecutionAction, ExecutionRequest};

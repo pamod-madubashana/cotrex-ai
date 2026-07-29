@@ -150,6 +150,7 @@ mod tests {
         let write = ExecutionAction::FileWrite {
             path: PathBuf::from("/tmp/file"),
             content: vec![],
+            working_directory: PathBuf::from("."),
         };
         let delete = ExecutionAction::FileDelete {
             path: PathBuf::from("/tmp/file"),

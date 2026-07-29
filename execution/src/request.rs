@@ -39,10 +39,12 @@ pub enum ExecutionAction {
     },
     /// Write content to a file.
     FileWrite {
-        /// The target file path.
+        /// The target file path (relative to working directory).
         path: PathBuf,
         /// The content to write.
         content: Vec<u8>,
+        /// The working directory for file operations.
+        working_directory: PathBuf,
     },
     /// Delete a file.
     FileDelete {
