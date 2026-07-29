@@ -6,7 +6,14 @@ use crate::request::ExecutionRequest;
 use crate::result::ExecutionResult;
 use kernel::event::{ExecutionCompleted, ExecutionFailed, ExecutionRequested};
 use kernel::{EventPayload, EventStore};
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
 
 // ---------------------------------------------------------------------------
 // Execution Engine (RFC-0004)
@@ -35,7 +42,7 @@ use std::time::SystemTime;
 /// - Interpreting file contents
 /// - Assigning event IDs or sequence numbers
 pub struct ExecutionEngine {
-    store: EventStore,
+    store: Box<dyn EventStore>,
     validator: Box<dyn CapabilityValidator>,
     registry: ExecutorRegistry,
 }
@@ -46,7 +53,7 @@ impl ExecutionEngine {
     /// Takes ownership of the event store, a capability validator,
     /// and an executor registry.
     pub fn new(
-        store: EventStore,
+        store: Box<dyn EventStore>,
         validator: Box<dyn CapabilityValidator>,
         registry: ExecutorRegistry,
     ) -> Self {
@@ -114,7 +121,7 @@ impl ExecutionEngine {
                     working_directory, ..
                 } => working_directory.clone(),
             },
-            requested_at: SystemTime::now(),
+            requested_at: now(),
         };
         self.store
             .append(EventPayload::ExecutionRequested(requested))?;
@@ -131,7 +138,7 @@ impl ExecutionEngine {
                     execution_id: request.id,
                     exit_code: result.exit_code.unwrap_or(0),
                     duration_ms,
-                    completed_at: SystemTime::now(),
+                    completed_at: now(),
                 };
                 self.store
                     .append(EventPayload::ExecutionCompleted(completed))?;
@@ -142,7 +149,7 @@ impl ExecutionEngine {
                     execution_id: request.id,
                     error: reason.clone(),
                     duration_ms,
-                    failed_at: SystemTime::now(),
+                    failed_at: now(),
                 };
                 self.store.append(EventPayload::ExecutionFailed(failed))?;
                 Err(ExecutionError::ExecutorFailed(reason))
@@ -152,8 +159,8 @@ impl ExecutionEngine {
     }
 
     /// Return a reference to the underlying event store.
-    pub fn store(&self) -> &EventStore {
-        &self.store
+    pub fn store(&self) -> &dyn EventStore {
+        &*self.store
     }
 }
 
@@ -167,7 +174,7 @@ mod tests {
     use crate::policy::ExecutionPolicy;
     use crate::registry::{ExecutionActionDiscriminant, ExecutorRegistry};
     use crate::request::{Capability, ExecutionAction};
-    use kernel::EventPayload;
+    use kernel::{EventPayload, MemoryEventStore};
     use std::path::PathBuf;
 
     // -----------------------------------------------------------------------
@@ -239,7 +246,7 @@ mod tests {
     }
 
     fn engine_with_executor(executor: FakeExecutor) -> ExecutionEngine {
-        let store = EventStore::new();
+        let store = Box::new(MemoryEventStore::new());
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
         registry
@@ -249,13 +256,13 @@ mod tests {
     }
 
     fn engine_denied() -> ExecutionEngine {
-        let store = EventStore::new();
+        let store = Box::new(MemoryEventStore::new());
         let validator = Box::new(ExecutionPolicy::deny_all());
         let registry = ExecutorRegistry::new();
         ExecutionEngine::new(store, validator, registry)
     }
 
-    fn event_payloads(store: &EventStore) -> Vec<EventPayload> {
+    fn event_payloads(store: &dyn EventStore) -> Vec<EventPayload> {
         store
             .replay(1)
             .unwrap()
@@ -357,13 +364,13 @@ mod tests {
         }
 
         // Create a store at capacity 1, append one event to fill it
-        let store = EventStore::with_capacity(1);
+        let store = Box::new(MemoryEventStore::with_capacity(1));
         store
             .append(EventPayload::ExecutionRequested(ExecutionRequested {
                 execution_id: uuid::Uuid::new_v4(),
                 command: "fill".into(),
                 working_directory: PathBuf::from("."),
-                requested_at: SystemTime::now(),
+                requested_at: now(),
             }))
             .unwrap();
 
@@ -416,7 +423,7 @@ mod tests {
             }
         }
 
-        let store = EventStore::new();
+        let store = Box::new(MemoryEventStore::new());
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
         registry
@@ -571,7 +578,7 @@ mod tests {
 
         // Capacity 1: first append (ExecutionRequested) succeeds,
         // second append (ExecutionCompleted) fails with Backpressure
-        let store = EventStore::with_capacity(1);
+        let store = Box::new(MemoryEventStore::with_capacity(1));
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
         registry
@@ -648,7 +655,7 @@ mod tests {
 
         // Capacity 1: first append (ExecutionRequested) succeeds,
         // second append (ExecutionFailed) fails with Backpressure
-        let store = EventStore::with_capacity(1);
+        let store = Box::new(MemoryEventStore::with_capacity(1));
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
         registry
@@ -712,7 +719,7 @@ mod tests {
     #[test]
     fn submit_missing_executor_behavior() {
         // Engine with no executor registered
-        let store = EventStore::new();
+        let store = Box::new(MemoryEventStore::new());
         let validator = Box::new(ExecutionPolicy::allow_all());
         let registry = ExecutorRegistry::new(); // empty
         let engine = ExecutionEngine::new(store, validator, registry);

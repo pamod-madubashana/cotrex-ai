@@ -22,10 +22,10 @@ pub trait Projection: Send + Sync {
     fn process_event(&self, event: &Event) -> Result<(), EventStoreError>;
 
     /// Rebuild from store.
-    fn rebuild(&self, store: &EventStore) -> Result<(), EventStoreError>;
+    fn rebuild(&self, store: &dyn EventStore) -> Result<(), EventStoreError>;
 
     /// Initialize projection.
-    fn initialize(&self, store: &EventStore) -> Result<(), EventStoreError>;
+    fn initialize(&self, store: &dyn EventStore) -> Result<(), EventStoreError>;
 
     /// Mark as processing.
     fn start_processing(&self) -> Result<(), EventStoreError>;
@@ -162,7 +162,7 @@ impl ProjectionEngine {
     }
 
     /// Initialize and rebuild all projections from store.
-    pub fn rebuild_all(&self, store: &EventStore) -> Result<(), EventStoreError> {
+    pub fn rebuild_all(&self, store: &dyn EventStore) -> Result<(), EventStoreError> {
         let projections = self.projections.lock().map_err(|e| {
             EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
         })?;
@@ -202,11 +202,11 @@ impl Projection for FileChangeProjection {
         FileChangeProjection::process_event(self, event)
     }
 
-    fn rebuild(&self, store: &EventStore) -> Result<(), EventStoreError> {
+    fn rebuild(&self, store: &dyn EventStore) -> Result<(), EventStoreError> {
         FileChangeProjection::rebuild(self, store)
     }
 
-    fn initialize(&self, store: &EventStore) -> Result<(), EventStoreError> {
+    fn initialize(&self, store: &dyn EventStore) -> Result<(), EventStoreError> {
         FileChangeProjection::initialize(self, store)
     }
 
@@ -228,14 +228,21 @@ mod tests {
     use super::*;
     use crate::event::{EventPayload, FileChanged, FileOperation};
     use crate::projection::FileChangeProjection;
+    use crate::store::MemoryEventStore;
     use std::path::PathBuf;
-    use std::time::SystemTime;
+
+    fn now() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
 
     fn file_changed_payload(path: &str) -> EventPayload {
         EventPayload::FileChanged(FileChanged {
             path: PathBuf::from(path),
             operation: FileOperation::Created,
-            timestamp: SystemTime::now(),
+            timestamp: now(),
         })
     }
 
@@ -288,7 +295,7 @@ mod tests {
             Ok(())
         }
 
-        fn rebuild(&self, _store: &EventStore) -> Result<(), EventStoreError> {
+        fn rebuild(&self, _store: &dyn EventStore) -> Result<(), EventStoreError> {
             let mut cp = self.checkpoint.lock().map_err(|e| {
                 EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
             })?;
@@ -296,7 +303,7 @@ mod tests {
             Ok(())
         }
 
-        fn initialize(&self, _store: &EventStore) -> Result<(), EventStoreError> {
+        fn initialize(&self, _store: &dyn EventStore) -> Result<(), EventStoreError> {
             let mut status = self.status.lock().map_err(|e| {
                 EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
             })?;
@@ -382,7 +389,7 @@ mod tests {
         let proj = FileChangeProjection::new();
         engine.register(Box::new(proj)).unwrap();
 
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         store.append(file_changed_payload("a.txt")).unwrap();
         store.append(file_changed_payload("b.txt")).unwrap();
 
@@ -400,7 +407,7 @@ mod tests {
         let proj = FileChangeProjection::new();
         engine.register(Box::new(proj)).unwrap();
 
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         engine.rebuild_all(&store).unwrap();
         engine.start_processing("FileChange").unwrap();
 
@@ -417,7 +424,7 @@ mod tests {
         let proj = FileChangeProjection::new();
         engine.register(Box::new(proj)).unwrap();
 
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         engine.rebuild_all(&store).unwrap();
         // Don't start processing - events won't be processed
         // but no errors either since we skip non-Processing projections
@@ -438,7 +445,7 @@ mod tests {
         // Second projection overwrites first (same name "FileChange")
         assert_eq!(engine.len(), 1);
 
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         engine.rebuild_all(&store).unwrap();
 
         assert_eq!(
@@ -453,7 +460,7 @@ mod tests {
         let proj = FileChangeProjection::new();
         engine.register(Box::new(proj)).unwrap();
 
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         engine.rebuild_all(&store).unwrap();
 
         engine.start_processing("FileChange").unwrap();
@@ -480,7 +487,7 @@ mod tests {
         assert_eq!(engine.len(), 2);
 
         // Initialize both
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         store.append(file_changed_payload("a.txt")).unwrap();
         store.append(file_changed_payload("b.txt")).unwrap();
         engine.rebuild_all(&store).unwrap();
@@ -527,7 +534,7 @@ mod tests {
         engine.register(Box::new(healthy)).unwrap();
         engine.register(Box::new(failing)).unwrap();
 
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         store.append(file_changed_payload("a.txt")).unwrap();
         store.append(file_changed_payload("b.txt")).unwrap();
 

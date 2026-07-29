@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::time::SystemTime;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -10,7 +9,7 @@ use uuid::Uuid;
 ///
 /// Records what was asked, not what happened. Appended to the EventStore
 /// before the action is performed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExecutionRequested {
     /// Unique identifier for this execution.
     pub execution_id: Uuid,
@@ -18,15 +17,15 @@ pub struct ExecutionRequested {
     pub command: String,
     /// The working directory for execution.
     pub working_directory: PathBuf,
-    /// Timestamp when the request was accepted.
-    pub requested_at: SystemTime,
+    /// Unix timestamp in seconds since UNIX_EPOCH when the request was accepted.
+    pub requested_at: u64,
 }
 
 /// Emitted when execution finishes successfully.
 ///
 /// Records outcome metadata. Does NOT store stdout/stderr content.
 /// Large output belongs in external storage referenced by `execution_id`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExecutionCompleted {
     /// Unique identifier for this execution.
     pub execution_id: Uuid,
@@ -34,14 +33,14 @@ pub struct ExecutionCompleted {
     pub exit_code: i32,
     /// Duration of execution in milliseconds.
     pub duration_ms: u64,
-    /// Timestamp when execution completed.
-    pub completed_at: SystemTime,
+    /// Unix timestamp in seconds since UNIX_EPOCH when execution completed.
+    pub completed_at: u64,
 }
 
 /// Emitted when execution fails.
 ///
 /// Records the error reason. Does NOT store full output dumps.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ExecutionFailed {
     /// Unique identifier for this execution.
     pub execution_id: Uuid,
@@ -49,15 +48,15 @@ pub struct ExecutionFailed {
     pub error: String,
     /// Duration of execution in milliseconds.
     pub duration_ms: u64,
-    /// Timestamp when execution failed.
-    pub failed_at: SystemTime,
+    /// Unix timestamp in seconds since UNIX_EPOCH when execution failed.
+    pub failed_at: u64,
 }
 
 // ---------------------------------------------------------------------------
 // File operations
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum FileOperation {
     Created,
     Modified,
@@ -68,11 +67,12 @@ pub enum FileOperation {
 // FileChanged event
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FileChanged {
     pub path: PathBuf,
     pub operation: FileOperation,
-    pub timestamp: SystemTime,
+    /// Unix timestamp in seconds since UNIX_EPOCH.
+    pub timestamp: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ pub struct FileChanged {
 ///
 /// Each variant represents a specific type of state change. The EventStore
 /// is append-only; events are never modified after creation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum EventPayload {
     /// A file was created, modified, or deleted.
     FileChanged(FileChanged),
@@ -99,11 +99,12 @@ pub enum EventPayload {
 // Event envelope
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Event {
     pub id: Uuid,
     pub sequence: u64,
-    pub occurred_at: SystemTime,
+    /// Unix timestamp in seconds since UNIX_EPOCH.
+    pub occurred_at: u64,
     pub payload: EventPayload,
 }
 
@@ -114,6 +115,13 @@ pub struct Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn now() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
 
     #[test]
     fn file_operation_equality() {
@@ -126,7 +134,7 @@ mod tests {
         let payload = EventPayload::FileChanged(FileChanged {
             path: PathBuf::from("test.txt"),
             operation: FileOperation::Created,
-            timestamp: SystemTime::now(),
+            timestamp: now(),
         });
         let _cloned = payload.clone();
     }
@@ -136,11 +144,11 @@ mod tests {
         let event = Event {
             id: Uuid::new_v4(),
             sequence: 1,
-            occurred_at: SystemTime::now(),
+            occurred_at: now(),
             payload: EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("test.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }),
         };
         let _cloned = event.clone();
@@ -156,7 +164,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             command: "cargo build".into(),
             working_directory: PathBuf::from("/project"),
-            requested_at: SystemTime::now(),
+            requested_at: now(),
         };
         assert_eq!(event.command, "cargo build");
         assert_eq!(event.working_directory, PathBuf::from("/project"));
@@ -168,7 +176,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             exit_code: 0,
             duration_ms: 42,
-            completed_at: SystemTime::now(),
+            completed_at: now(),
         };
         assert_eq!(event.exit_code, 0);
         assert_eq!(event.duration_ms, 42);
@@ -180,7 +188,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             error: "command not found".into(),
             duration_ms: 10,
-            failed_at: SystemTime::now(),
+            failed_at: now(),
         };
         assert_eq!(event.error, "command not found");
         assert_eq!(event.duration_ms, 10);
@@ -196,7 +204,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             command: "ls".into(),
             working_directory: PathBuf::from("."),
-            requested_at: SystemTime::now(),
+            requested_at: now(),
         };
         let payload = EventPayload::ExecutionRequested(req.clone());
         match &payload {
@@ -211,7 +219,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             exit_code: 0,
             duration_ms: 100,
-            completed_at: SystemTime::now(),
+            completed_at: now(),
         };
         let payload = EventPayload::ExecutionCompleted(comp.clone());
         match &payload {
@@ -226,7 +234,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             error: "timeout".into(),
             duration_ms: 5000,
-            failed_at: SystemTime::now(),
+            failed_at: now(),
         };
         let payload = EventPayload::ExecutionFailed(fail.clone());
         match &payload {
@@ -245,7 +253,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             command: "cargo test".into(),
             working_directory: PathBuf::from("/project"),
-            requested_at: SystemTime::now(),
+            requested_at: now(),
         };
         let cloned = event.clone();
         assert_eq!(event, cloned);
@@ -257,7 +265,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             exit_code: 1,
             duration_ms: 200,
-            completed_at: SystemTime::now(),
+            completed_at: now(),
         };
         let cloned = event.clone();
         assert_eq!(event, cloned);
@@ -269,7 +277,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             error: "segfault".into(),
             duration_ms: 30,
-            failed_at: SystemTime::now(),
+            failed_at: now(),
         };
         let cloned = event.clone();
         assert_eq!(event, cloned);
@@ -278,7 +286,7 @@ mod tests {
     #[test]
     fn execution_requested_equality() {
         let id = Uuid::new_v4();
-        let ts = SystemTime::now();
+        let ts = now();
         let a = ExecutionRequested {
             execution_id: id,
             command: "ls".into(),
@@ -297,7 +305,7 @@ mod tests {
     #[test]
     fn execution_completed_equality() {
         let id = Uuid::new_v4();
-        let ts = SystemTime::now();
+        let ts = now();
         let a = ExecutionCompleted {
             execution_id: id,
             exit_code: 0,
@@ -316,7 +324,7 @@ mod tests {
     #[test]
     fn execution_failed_equality() {
         let id = Uuid::new_v4();
-        let ts = SystemTime::now();
+        let ts = now();
         let a = ExecutionFailed {
             execution_id: id,
             error: "fail".into(),
@@ -338,7 +346,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             command: "echo".into(),
             working_directory: PathBuf::from("/tmp"),
-            requested_at: SystemTime::now(),
+            requested_at: now(),
         };
         let debug = format!("{:?}", req);
         assert!(debug.contains("ExecutionRequested"));
@@ -347,7 +355,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             exit_code: 0,
             duration_ms: 1,
-            completed_at: SystemTime::now(),
+            completed_at: now(),
         };
         let debug = format!("{:?}", comp);
         assert!(debug.contains("ExecutionCompleted"));
@@ -356,7 +364,7 @@ mod tests {
             execution_id: Uuid::new_v4(),
             error: "err".into(),
             duration_ms: 1,
-            failed_at: SystemTime::now(),
+            failed_at: now(),
         };
         let debug = format!("{:?}", fail);
         assert!(debug.contains("ExecutionFailed"));
@@ -365,7 +373,7 @@ mod tests {
     #[test]
     fn event_payload_equality_across_variants() {
         let id = Uuid::new_v4();
-        let ts = SystemTime::now();
+        let ts = now();
 
         let payload_a = EventPayload::ExecutionRequested(ExecutionRequested {
             execution_id: id,

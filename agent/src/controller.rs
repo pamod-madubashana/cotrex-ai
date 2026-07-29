@@ -200,7 +200,7 @@ mod tests {
     }
 
     fn test_controller() -> AgentController<MockPlanner> {
-        let store = kernel::EventStore::new();
+        let store = kernel::MemoryEventStore::new();
         let validator = Box::new(ExecutionPolicy::allow_all());
         let mut registry = ExecutorRegistry::new();
         registry
@@ -221,7 +221,7 @@ mod tests {
                 Box::new(SucceedExecutor),
             )
             .unwrap();
-        let engine = ExecutionEngine::new(store, validator, registry);
+        let engine = ExecutionEngine::new(Box::new(store), validator, registry);
         AgentController::new(MockPlanner, engine)
     }
 

@@ -141,7 +141,7 @@ impl Projection for AiContextProjection {
         Ok(())
     }
 
-    fn rebuild(&self, store: &EventStore) -> Result<(), EventStoreError> {
+    fn rebuild(&self, store: &dyn EventStore) -> Result<(), EventStoreError> {
         // Clear state
         {
             let mut state = self.state.lock().map_err(|e| {
@@ -168,7 +168,7 @@ impl Projection for AiContextProjection {
         Ok(())
     }
 
-    fn initialize(&self, store: &EventStore) -> Result<(), EventStoreError> {
+    fn initialize(&self, store: &dyn EventStore) -> Result<(), EventStoreError> {
         self.rebuild(store)?;
         let mut status = self.status.lock().map_err(|e| {
             EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
@@ -214,14 +214,20 @@ impl Projection for AiContextProjection {
 mod tests {
     use super::*;
     use crate::event::{EventPayload, FileChanged};
-    use crate::store::EventStore;
-    use std::time::SystemTime;
+    use crate::store::MemoryEventStore;
+
+    fn now() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
 
     fn file_changed_payload(path: &str) -> EventPayload {
         EventPayload::FileChanged(FileChanged {
             path: PathBuf::from(path),
             operation: FileOperation::Created,
-            timestamp: SystemTime::now(),
+            timestamp: now(),
         })
     }
 
@@ -237,7 +243,7 @@ mod tests {
     #[test]
     fn ai_context_summary_after_rebuild() {
         let proj = AiContextProjection::new();
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
 
         store.append(file_changed_payload("a.txt")).unwrap();
         store.append(file_changed_payload("b.txt")).unwrap();
@@ -254,7 +260,7 @@ mod tests {
     #[test]
     fn ai_context_recent_changes_tracked() {
         let proj = AiContextProjection::new();
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
 
         for i in 0..15 {
             store

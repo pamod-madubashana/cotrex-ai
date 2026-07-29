@@ -36,17 +36,45 @@ pub struct ReplayResult {
 }
 
 // ---------------------------------------------------------------------------
-// Event Store
+// Event Store trait
 // ---------------------------------------------------------------------------
 
-pub struct EventStore {
+pub trait EventStore: Send + Sync {
+    /// Append an event to the store.
+    ///
+    /// Returns the committed event with assigned sequence number.
+    /// Append is atomic: the event is either fully written or not written at all.
+    /// Failed appends consume no sequence number.
+    fn append(&self, payload: EventPayload) -> Result<Event, EventStoreError>;
+
+    /// Replay committed events starting from `start_sequence`.
+    ///
+    /// Returns a bounded snapshot of events as of the moment replay begins.
+    /// Events appended after replay starts are not included.
+    fn replay(&self, start_sequence: u64) -> Result<ReplayResult, EventStoreError>;
+
+    /// Return the current number of committed events.
+    fn len(&self) -> usize;
+
+    /// Return true if the store has no committed events.
+    fn is_empty(&self) -> bool;
+
+    /// Return the next sequence number that would be assigned.
+    fn next_sequence(&self) -> u64;
+}
+
+// ---------------------------------------------------------------------------
+// Memory Event Store (in-memory, existing behavior)
+// ---------------------------------------------------------------------------
+
+pub struct MemoryEventStore {
     events: Mutex<Vec<Event>>,
     next_sequence: Mutex<u64>,
     capacity: Option<usize>,
 }
 
-impl EventStore {
-    /// Create a new Event Store with unlimited capacity.
+impl MemoryEventStore {
+    /// Create a new Memory Event Store with unlimited capacity.
     pub fn new() -> Self {
         Self {
             events: Mutex::new(Vec::new()),
@@ -55,7 +83,7 @@ impl EventStore {
         }
     }
 
-    /// Create a new Event Store with bounded capacity for backpressure testing.
+    /// Create a new Memory Event Store with bounded capacity for backpressure testing.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             events: Mutex::new(Vec::new()),
@@ -63,13 +91,16 @@ impl EventStore {
             capacity: Some(capacity),
         }
     }
+}
 
-    /// Append an event to the store.
-    ///
-    /// Returns the committed event with assigned sequence number.
-    /// Append is atomic: the event is either fully written or not written at all.
-    /// Failed appends consume no sequence number.
-    pub fn append(&self, payload: EventPayload) -> Result<Event, EventStoreError> {
+impl Default for MemoryEventStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EventStore for MemoryEventStore {
+    fn append(&self, payload: EventPayload) -> Result<Event, EventStoreError> {
         let mut events = self.events.lock().map_err(|e| {
             EventStoreError::StorageFailure(format!("failed to acquire lock: {}", e))
         })?;
@@ -88,7 +119,10 @@ impl EventStore {
         let event = Event {
             id: Uuid::new_v4(),
             sequence: *next_seq,
-            occurred_at: std::time::SystemTime::now(),
+            occurred_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             payload,
         };
 
@@ -99,11 +133,7 @@ impl EventStore {
         Ok(event)
     }
 
-    /// Replay committed events starting from `start_sequence`.
-    ///
-    /// Returns a bounded snapshot of events as of the moment replay begins.
-    /// Events appended after replay starts are not included.
-    pub fn replay(&self, start_sequence: u64) -> Result<ReplayResult, EventStoreError> {
+    fn replay(&self, start_sequence: u64) -> Result<ReplayResult, EventStoreError> {
         let events = self.events.lock().map_err(|e| {
             EventStoreError::ReplayFailure(format!("failed to acquire lock: {}", e))
         })?;
@@ -141,25 +171,16 @@ impl EventStore {
         })
     }
 
-    /// Return the current number of committed events.
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.events.lock().map(|e| e.len()).unwrap_or(0)
     }
 
-    /// Return true if the store has no committed events.
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Return the next sequence number that would be assigned.
-    pub fn next_sequence(&self) -> u64 {
+    fn next_sequence(&self) -> u64 {
         self.next_sequence.lock().map(|s| *s).unwrap_or(1)
-    }
-}
-
-impl Default for EventStore {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -177,13 +198,16 @@ mod tests {
         EventPayload::FileChanged(FileChanged {
             path: PathBuf::from(path),
             operation: FileOperation::Created,
-            timestamp: std::time::SystemTime::now(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         })
     }
 
     #[test]
     fn append_assigns_sequential_sequence() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let e1 = store.append(file_changed_payload("a.txt")).unwrap();
         let e2 = store.append(file_changed_payload("b.txt")).unwrap();
         let e3 = store.append(file_changed_payload("c.txt")).unwrap();
@@ -195,7 +219,7 @@ mod tests {
 
     #[test]
     fn append_is_atomic() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let event = store.append(file_changed_payload("test.txt")).unwrap();
 
         assert_eq!(store.len(), 1);
@@ -205,7 +229,7 @@ mod tests {
 
     #[test]
     fn failed_append_consumes_no_sequence() {
-        let store = EventStore::with_capacity(1);
+        let store = MemoryEventStore::with_capacity(1);
         let _e1 = store.append(file_changed_payload("a.txt")).unwrap();
 
         // Second append should fail (backpressure)
@@ -219,7 +243,7 @@ mod tests {
 
     #[test]
     fn replay_preserves_ordering() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         store.append(file_changed_payload("a.txt")).unwrap();
         store.append(file_changed_payload("b.txt")).unwrap();
         store.append(file_changed_payload("c.txt")).unwrap();
@@ -233,7 +257,7 @@ mod tests {
 
     #[test]
     fn replay_from_middle() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         store.append(file_changed_payload("a.txt")).unwrap();
         store.append(file_changed_payload("b.txt")).unwrap();
         store.append(file_changed_payload("c.txt")).unwrap();
@@ -249,7 +273,7 @@ mod tests {
 
     #[test]
     fn replay_empty_store() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let result = store.replay(1).unwrap();
         assert!(result.events.is_empty());
         assert_eq!(result.snapshot_end, 0);
@@ -257,7 +281,7 @@ mod tests {
 
     #[test]
     fn replay_snapshot_semantics() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         store.append(file_changed_payload("a.txt")).unwrap();
         store.append(file_changed_payload("b.txt")).unwrap();
         store.append(file_changed_payload("c.txt")).unwrap();
@@ -284,7 +308,7 @@ mod tests {
 
     #[test]
     fn replay_never_skips_committed_event() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         for i in 0..100 {
             store
                 .append(file_changed_payload(&format!("file_{}.txt", i)))
@@ -302,7 +326,7 @@ mod tests {
 
     #[test]
     fn replay_never_duplicates_event() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         store.append(file_changed_payload("a.txt")).unwrap();
         store.append(file_changed_payload("b.txt")).unwrap();
 
@@ -314,7 +338,7 @@ mod tests {
 
     #[test]
     fn backpressure_blocks_at_capacity() {
-        let store = EventStore::with_capacity(2);
+        let store = MemoryEventStore::with_capacity(2);
         let _e1 = store.append(file_changed_payload("a.txt")).unwrap();
         let _e2 = store.append(file_changed_payload("b.txt")).unwrap();
 
@@ -324,7 +348,7 @@ mod tests {
 
     #[test]
     fn committed_events_remain_available_after_backpressure() {
-        let store = EventStore::with_capacity(2);
+        let store = MemoryEventStore::with_capacity(2);
         let e1 = store.append(file_changed_payload("a.txt")).unwrap();
         let e2 = store.append(file_changed_payload("b.txt")).unwrap();
 

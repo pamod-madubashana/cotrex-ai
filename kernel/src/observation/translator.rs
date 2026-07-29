@@ -1,6 +1,6 @@
 use crate::event::{EventPayload, FileChanged, FileOperation};
 use std::path::PathBuf;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ---------------------------------------------------------------------------
 // Raw Observation (RFC-0003, Section 2)
@@ -36,6 +36,13 @@ pub struct TranslationError {
 
 pub struct Translator;
 
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 impl Translator {
     /// Translate a raw observation into a FileChanged event payload.
     ///
@@ -48,33 +55,33 @@ impl Translator {
                 events.push(EventPayload::FileChanged(FileChanged {
                     path: observation.path.clone(),
                     operation: FileOperation::Created,
-                    timestamp: SystemTime::now(),
+                    timestamp: now(),
                 }));
             }
             RawOperation::Modified => {
                 events.push(EventPayload::FileChanged(FileChanged {
                     path: observation.path.clone(),
                     operation: FileOperation::Modified,
-                    timestamp: SystemTime::now(),
+                    timestamp: now(),
                 }));
             }
             RawOperation::Deleted => {
                 events.push(EventPayload::FileChanged(FileChanged {
                     path: observation.path.clone(),
                     operation: FileOperation::Deleted,
-                    timestamp: SystemTime::now(),
+                    timestamp: now(),
                 }));
             }
             RawOperation::Renamed { ref from } => {
                 events.push(EventPayload::FileChanged(FileChanged {
                     path: from.clone(),
                     operation: FileOperation::Deleted,
-                    timestamp: SystemTime::now(),
+                    timestamp: now(),
                 }));
                 events.push(EventPayload::FileChanged(FileChanged {
                     path: observation.path.clone(),
                     operation: FileOperation::Created,
-                    timestamp: SystemTime::now(),
+                    timestamp: now(),
                 }));
             }
         }

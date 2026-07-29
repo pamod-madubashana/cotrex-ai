@@ -119,7 +119,7 @@ impl ObservationPipeline {
     pub fn process_observation(
         &self,
         observation: &RawObservation,
-        store: &EventStore,
+        store: &dyn EventStore,
     ) -> Result<u64, EventStoreError> {
         // Check status
         if self.status() != ObservationStatus::Watching {
@@ -171,7 +171,7 @@ impl ObservationPipeline {
 mod tests {
     use super::*;
     use crate::observation::translator::RawOperation;
-    use crate::store::EventStore;
+    use crate::store::MemoryEventStore;
 
     fn test_pipeline() -> ObservationPipeline {
         ObservationPipeline::new(PathBuf::from("/project"))
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn process_observation_accepted() {
         let pipeline = test_pipeline();
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
 
         pipeline.initialize().unwrap();
         pipeline.start_watching().unwrap();
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn process_observation_rejected() {
         let pipeline = test_pipeline();
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
 
         pipeline.initialize().unwrap();
         pipeline.start_watching().unwrap();
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn process_observation_not_watching() {
         let pipeline = test_pipeline();
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
 
         let obs = accept_obs("/project/src/main.rs");
         let result = pipeline.process_observation(&obs, &store);
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn process_observation_renamed_produces_two_events() {
         let pipeline = test_pipeline();
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
 
         pipeline.initialize().unwrap();
         pipeline.start_watching().unwrap();
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn duplicate_observations_create_multiple_events() {
         let pipeline = test_pipeline();
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
 
         pipeline.initialize().unwrap();
         pipeline.start_watching().unwrap();
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn translation_failure_path_unreachable() {
         let pipeline = test_pipeline();
-        let _store = EventStore::new();
+        let _store = MemoryEventStore::new();
 
         pipeline.initialize().unwrap();
         pipeline.start_watching().unwrap();
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn append_failure_propagates_through_pipeline() {
         let pipeline = test_pipeline();
-        let store = EventStore::with_capacity(1);
+        let store = MemoryEventStore::with_capacity(1);
 
         pipeline.initialize().unwrap();
         pipeline.start_watching().unwrap();

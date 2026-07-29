@@ -117,7 +117,7 @@ impl FileChangeProjection {
     }
 
     /// Rebuild projection state from replay.
-    pub fn rebuild(&self, store: &EventStore) -> Result<(), EventStoreError> {
+    pub fn rebuild(&self, store: &dyn EventStore) -> Result<(), EventStoreError> {
         // Only transition to Rebuilding if not in Created state
         {
             let current = self.status.lock().map_err(|e| {
@@ -158,7 +158,7 @@ impl FileChangeProjection {
     }
 
     /// Initialize projection (Created -> Initialized).
-    pub fn initialize(&self, store: &EventStore) -> Result<(), EventStoreError> {
+    pub fn initialize(&self, store: &dyn EventStore) -> Result<(), EventStoreError> {
         self.rebuild(store)
     }
 
@@ -202,20 +202,26 @@ impl Default for FileChangeProjection {
 mod tests {
     use super::*;
     use crate::event::{Event, EventPayload, FileChanged, FileOperation};
-    use crate::store::EventStore;
+    use crate::store::MemoryEventStore;
     use std::path::PathBuf;
-    use std::time::SystemTime;
     use uuid::Uuid;
+
+    fn now() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
 
     fn test_event(path: &str, op: FileOperation) -> Event {
         Event {
             id: Uuid::new_v4(),
             sequence: 1,
-            occurred_at: SystemTime::now(),
+            occurred_at: now(),
             payload: EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from(path),
                 operation: op,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }),
         }
     }
@@ -265,7 +271,7 @@ mod tests {
 
     #[test]
     fn rebuild_from_store() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let proj = FileChangeProjection::new();
 
         // Append events
@@ -273,21 +279,21 @@ mod tests {
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("a.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
         store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("b.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
         store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("a.txt"),
                 operation: FileOperation::Modified,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
 
@@ -308,14 +314,14 @@ mod tests {
 
     #[test]
     fn rebuild_is_idempotent() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let proj = FileChangeProjection::new();
 
         store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("a.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
 
@@ -331,21 +337,21 @@ mod tests {
 
     #[test]
     fn projection_state_is_disposable() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let proj = FileChangeProjection::new();
 
         store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("a.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
         store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("b.txt"),
                 operation: FileOperation::Modified,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
 
@@ -367,14 +373,14 @@ mod tests {
 
     #[test]
     fn projection_does_not_modify_store() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let proj = FileChangeProjection::new();
 
         store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("a.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
 
@@ -394,14 +400,14 @@ mod tests {
         let proj = FileChangeProjection::new();
         assert_eq!(proj.status(), ProjectionStatus::Created);
 
-        proj.initialize(&EventStore::new()).unwrap();
+        proj.initialize(&MemoryEventStore::new()).unwrap();
         assert_eq!(proj.status(), ProjectionStatus::Initialized);
     }
 
     #[test]
     fn lifecycle_initialized_to_processing() {
         let proj = FileChangeProjection::new();
-        proj.initialize(&EventStore::new()).unwrap();
+        proj.initialize(&MemoryEventStore::new()).unwrap();
 
         proj.start_processing().unwrap();
         assert_eq!(proj.status(), ProjectionStatus::Processing);
@@ -410,7 +416,7 @@ mod tests {
     #[test]
     fn lifecycle_processing_to_failed() {
         let proj = FileChangeProjection::new();
-        proj.initialize(&EventStore::new()).unwrap();
+        proj.initialize(&MemoryEventStore::new()).unwrap();
         proj.start_processing().unwrap();
 
         proj.mark_failed().unwrap();
@@ -420,21 +426,21 @@ mod tests {
     #[test]
     fn lifecycle_failed_to_rebuilding() {
         let proj = FileChangeProjection::new();
-        proj.initialize(&EventStore::new()).unwrap();
+        proj.initialize(&MemoryEventStore::new()).unwrap();
         proj.start_processing().unwrap();
         proj.mark_failed().unwrap();
 
-        proj.rebuild(&EventStore::new()).unwrap();
+        proj.rebuild(&MemoryEventStore::new()).unwrap();
         assert_eq!(proj.status(), ProjectionStatus::Initialized);
     }
 
     #[test]
     fn lifecycle_processing_to_rebuilding() {
         let proj = FileChangeProjection::new();
-        proj.initialize(&EventStore::new()).unwrap();
+        proj.initialize(&MemoryEventStore::new()).unwrap();
         proj.start_processing().unwrap();
 
-        proj.rebuild(&EventStore::new()).unwrap();
+        proj.rebuild(&MemoryEventStore::new()).unwrap();
         assert_eq!(proj.status(), ProjectionStatus::Initialized);
     }
 
@@ -448,7 +454,7 @@ mod tests {
     #[test]
     fn lifecycle_invalid_failed_to_processing() {
         let proj = FileChangeProjection::new();
-        proj.initialize(&EventStore::new()).unwrap();
+        proj.initialize(&MemoryEventStore::new()).unwrap();
         proj.start_processing().unwrap();
         proj.mark_failed().unwrap();
 
@@ -468,21 +474,21 @@ mod tests {
 
     #[test]
     fn checkpoint_advances_on_process() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let proj = FileChangeProjection::new();
 
         let e1 = store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("a.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
         let e2 = store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("b.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
 
@@ -495,14 +501,14 @@ mod tests {
 
     #[test]
     fn checkpoint_resets_on_rebuild() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let proj = FileChangeProjection::new();
 
         store
             .append(EventPayload::FileChanged(FileChanged {
                 path: PathBuf::from("a.txt"),
                 operation: FileOperation::Created,
-                timestamp: SystemTime::now(),
+                timestamp: now(),
             }))
             .unwrap();
 
@@ -518,7 +524,7 @@ mod tests {
 
     #[test]
     fn rebuild_sets_checkpoint_to_last_event() {
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let proj = FileChangeProjection::new();
 
         for i in 0..5 {
@@ -526,7 +532,7 @@ mod tests {
                 .append(EventPayload::FileChanged(FileChanged {
                     path: PathBuf::from(format!("file_{}.txt", i)),
                     operation: FileOperation::Created,
-                    timestamp: SystemTime::now(),
+                    timestamp: now(),
                 }))
                 .unwrap();
         }
@@ -542,7 +548,7 @@ mod tests {
     #[test]
     fn checkpoint_associativity_full_rebuild_equals_resume() {
         // Create 5 events
-        let store = EventStore::new();
+        let store = MemoryEventStore::new();
         let ops = [
             (PathBuf::from("a.txt"), FileOperation::Created),
             (PathBuf::from("a.txt"), FileOperation::Modified),
@@ -556,7 +562,7 @@ mod tests {
                 .append(EventPayload::FileChanged(FileChanged {
                     path: path.clone(),
                     operation: *op,
-                    timestamp: SystemTime::now(),
+                    timestamp: now(),
                 }))
                 .unwrap();
         }
