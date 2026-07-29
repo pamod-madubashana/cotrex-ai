@@ -63,25 +63,35 @@ impl ExecutionEngine {
     ///
     /// 1. **Validate** — check capabilities via the validator. If invalid,
     ///    return `ValidationFailed` and append no events.
-    /// 2. **Request event** — create `ExecutionRequested` and append to the
+    /// 2. **Lookup** — find the executor in the registry. If missing,
+    ///    return `Internal` and append no events.
+    /// 3. **Request event** — create `ExecutionRequested` and append to the
     ///    event store. If the append fails, return `EventAppendFailed` and
     ///    do not call the executor.
-    /// 3. **Dispatch** — look up the executor in the registry and call it.
-    /// 4. **Result event** — append `ExecutionCompleted` on success or
+    /// 4. **Dispatch** — call the executor.
+    /// 5. **Result event** — append `ExecutionCompleted` on success or
     ///    `ExecutionFailed` on failure.
-    /// 5. **Return** — the result or error from the executor.
+    /// 6. **Return** — the result or error from the executor.
     ///
     /// # Errors
     ///
     /// - [`ExecutionError::ValidationFailed`] — capabilities invalid
+    /// - [`ExecutionError::Internal`] — no executor registered for action
     /// - [`ExecutionError::EventAppendFailed`] — event store rejected append
     /// - [`ExecutionError::ExecutorFailed`] — executor returned an error
-    /// - [`ExecutionError::Internal`] — no executor registered for action
     pub fn submit(&self, request: &ExecutionRequest) -> Result<ExecutionResult, ExecutionError> {
         // Step 1: Validate capabilities
         self.validator.validate(request)?;
 
-        // Step 2: Append ExecutionRequested event
+        // Step 2: Look up executor (before appending any events)
+        // A missing executor is a deterministic configuration error.
+        // Detect it before recording the request to avoid orphaned events.
+        let executor: &dyn Executor = self
+            .registry
+            .get(&request.action)
+            .ok_or_else(|| ExecutionError::Internal("no executor registered".into()))?;
+
+        // Step 3: Append ExecutionRequested event
         let requested = ExecutionRequested {
             execution_id: request.id,
             command: match &request.action {
@@ -104,12 +114,6 @@ impl ExecutionEngine {
         };
         self.store
             .append(EventPayload::ExecutionRequested(requested))?;
-
-        // Step 3: Look up executor
-        let executor: &dyn Executor = self
-            .registry
-            .get(&request.action)
-            .ok_or_else(|| ExecutionError::Internal("no executor registered".into()))?;
 
         // Step 4: Dispatch execution
         let start = SystemTime::now();
@@ -666,46 +670,19 @@ mod tests {
     // -----------------------------------------------------------------------
     // Scenario 3: No executor registered.
     //
-    // CURRENT BEHAVIOR:
+    // BEHAVIOR (after fix):
     //   1. Validation passes
-    //   2. ExecutionRequested IS appended to the store
-    //   3. Registry lookup fails → Internal("no executor registered")
-    //   4. Orphaned ExecutionRequested exists in the store
+    //   2. Registry lookup fails → Internal("no executor registered")
+    //   3. NO events are appended
     //
-    // This is a PROGRAMMING ERROR (misconfigured registry), not a runtime
-    // failure. The ExecutionRequested event is appended before the error
-    // is detected.
+    // A missing executor is a deterministic configuration/programming
+    // error. It is detected before any event is recorded. The EventStore
+    // remains empty.
     //
-    // ARCHITECTURAL ASSESSMENT:
-    //
-    // The current ordering (append THEN lookup) produces an orphaned
-    // event for a deterministic configuration error. This is
-    // architecturally QUESTIONABLE because:
-    //
-    //   - The request was never actually accepted for execution.
-    //   - The engine knew (at configuration time) that no executor
-    //     existed for this action type.
-    //   - Recording "we accepted a request we could never fulfill"
-    //     creates noise in the event stream.
-    //
-    // RECOMMENDATION:
-    //
-    // Move registry lookup BEFORE the ExecutionRequested append.
-    // If no executor is registered, return Internal error immediately
-    // with zero events appended. This treats missing executor as a
-    // pre-flight check, not a post-acceptance failure.
-    //
-    // Proposed change for Commit 4 or later:
-    //
-    //   fn submit(&self, request: &ExecutionRequest) -> Result<...> {
-    //       self.validator.validate(request)?;
-    //       let executor = self.registry.get(&request.action)
-    //           .ok_or_else(|| ExecutionError::Internal(...))?;  // BEFORE append
-    //       self.store.append(EventPayload::ExecutionRequested(...))?;
-    //       // ... dispatch executor
-    //   }
-    //
-    // This is a BEHAVIORAL CHANGE and should be committed separately.
+    // INVARIANT: Only two scenarios produce orphaned ExecutionRequested:
+    //   1. Executor succeeded, Completed append failed
+    //   2. Executor failed, Failed append failed
+    // Missing executor is NOT one of them.
     // -----------------------------------------------------------------------
 
     #[test]
@@ -728,17 +705,12 @@ mod tests {
             other => panic!("expected Internal error, got: {:?}", other),
         }
 
-        // CURRENT BEHAVIOR: ExecutionRequested IS appended (orphaned)
-        // This is the behavior being documented, not endorsed.
+        // No events appended — executor missing is a pre-flight error
         let payloads = event_payloads(engine.store());
         assert_eq!(
             payloads.len(),
-            1,
-            "CURRENT: orphaned ExecutionRequested exists"
-        );
-        assert!(
-            matches!(&payloads[0], EventPayload::ExecutionRequested(_)),
-            "orphaned event is ExecutionRequested"
+            0,
+            "missing executor must not produce any events"
         );
     }
 
