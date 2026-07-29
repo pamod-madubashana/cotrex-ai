@@ -493,7 +493,7 @@ mod tests {
     #[test]
     fn crash_recovery_meta_repair() {
         let dir = TempDir::new().unwrap();
-        let log_path = dir.path().join("events.log");
+        let _log_path = dir.path().join("events.log");
         let meta_path = dir.path().join("meta.json");
 
         // Write events

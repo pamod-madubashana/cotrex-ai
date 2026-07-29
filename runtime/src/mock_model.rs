@@ -1,4 +1,6 @@
-use crate::{InferenceRequest, InferenceResponse, LocalModel, ModelInfo, ProviderError, ResolvedConfig};
+use crate::{
+    InferenceRequest, InferenceResponse, LocalModel, ModelInfo, ProviderError, ResolvedConfig,
+};
 
 // ---------------------------------------------------------------------------
 // MockLocalModel

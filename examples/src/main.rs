@@ -58,7 +58,8 @@ fn fibonacci(n: u32) -> u32 {
 "#
             .into(),
             question: "What does this function do?".into(),
-            prompt: "Explain: What does this function do?\nfn fibonacci(n: u32) -> u32 { ... }".into(),
+            prompt: "Explain: What does this function do?\nfn fibonacci(n: u32) -> u32 { ... }"
+                .into(),
             temperature: 0.2,
             max_tokens: 1024,
         })

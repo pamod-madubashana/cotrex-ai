@@ -1,5 +1,5 @@
-use contract::ProviderState;
 use crate::ProviderError;
+use contract::ProviderState;
 
 // ---------------------------------------------------------------------------
 // ProviderLifecycle

@@ -1,4 +1,5 @@
 use crate::ProviderError;
+use crate::config::ResolvedConfig;
 
 // ---------------------------------------------------------------------------
 // Prompt
@@ -71,38 +72,6 @@ pub trait LocalModel: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
-// ResolvedConfig (placeholder for Phase 4)
-//
-// For now, a minimal config that satisfies the trait. Will be expanded
-// in Phase 4 (Configuration).
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-pub struct ResolvedConfig {
-    pub backend: String,
-    pub model_name: String,
-    pub context: u32,
-    pub temperature: f32,
-    pub max_tokens: u32,
-    pub threads: u32,
-    pub gpu_layers: u32,
-}
-
-impl Default for ResolvedConfig {
-    fn default() -> Self {
-        Self {
-            backend: "mock".into(),
-            model_name: "mock-model".into(),
-            context: 4096,
-            temperature: 0.1,
-            max_tokens: 512,
-            threads: 4,
-            gpu_layers: 0,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -150,13 +119,6 @@ mod tests {
             backend: "mock".into(),
         };
         assert_eq!(info.name, "test");
-    }
-
-    #[test]
-    fn resolved_config_default() {
-        let config = ResolvedConfig::default();
-        assert_eq!(config.backend, "mock");
-        assert_eq!(config.context, 4096);
     }
 
     #[test]

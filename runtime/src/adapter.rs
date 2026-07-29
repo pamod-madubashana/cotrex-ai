@@ -1,5 +1,5 @@
-use contract::{CapabilityRequest, BuildSummaryResponse};
 use crate::{InferenceResponse, Prompt, ProviderError, RuntimeError};
+use contract::{BuildSummaryResponse, CapabilityRequest};
 
 // ---------------------------------------------------------------------------
 // RuntimeRequest
@@ -37,7 +37,9 @@ pub fn adapt_request(request: CapabilityRequest) -> Result<RuntimeRequest, Provi
     }
 }
 
-pub fn adapt_response(response: InferenceResponse) -> Result<contract::CapabilityResponse, RuntimeError> {
+pub fn adapt_response(
+    response: InferenceResponse,
+) -> Result<contract::CapabilityResponse, RuntimeError> {
     Ok(contract::CapabilityResponse::BuildSummary(
         BuildSummaryResponse {
             success: true,

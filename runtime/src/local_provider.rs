@@ -1,7 +1,9 @@
-use contract::{CapabilityRequest, CapabilityResponse, ProviderHealth, ProviderInfo, ProviderState};
-use crate::lifecycle::ProviderLifecycle;
 use crate::adapter::{adapt_request, adapt_response};
+use crate::lifecycle::ProviderLifecycle;
 use crate::{CapabilityProvider, LocalModel, ProviderError, ResolvedConfig, RuntimeError};
+use contract::{
+    CapabilityRequest, CapabilityResponse, ProviderHealth, ProviderInfo, ProviderState,
+};
 use std::marker::PhantomData;
 
 // ---------------------------------------------------------------------------
@@ -83,10 +85,7 @@ impl<M: LocalModel> CapabilityProvider for LocalProvider<M> {
         }
     }
 
-    fn execute(
-        &self,
-        request: CapabilityRequest,
-    ) -> Result<CapabilityResponse, RuntimeError> {
+    fn execute(&self, request: CapabilityRequest) -> Result<CapabilityResponse, RuntimeError> {
         if self.lifecycle.state() != ProviderState::Ready {
             return Err(RuntimeError::Provider("not ready".into()));
         }
@@ -196,7 +195,9 @@ mod tests {
 
         assert!(matches!(
             provider.health(),
-            ProviderHealth::Degraded { reason: "not loaded" }
+            ProviderHealth::Degraded {
+                reason: "not loaded"
+            }
         ));
 
         provider.load().unwrap();
@@ -205,7 +206,9 @@ mod tests {
         provider.unload().unwrap();
         assert!(matches!(
             provider.health(),
-            ProviderHealth::Degraded { reason: "not loaded" }
+            ProviderHealth::Degraded {
+                reason: "not loaded"
+            }
         ));
     }
 
@@ -236,29 +239,45 @@ mod tests {
 
     #[test]
     fn failed_load_transitions_to_failed() {
-        use crate::MockLocalModel;
-        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
 
         struct FailingModel {
             call_count: Arc<AtomicUsize>,
         }
 
         impl crate::LocalModel for FailingModel {
-            fn load(&mut self, _config: &crate::ResolvedConfig) -> Result<(), crate::ProviderError> {
+            fn load(
+                &mut self,
+                _config: &crate::ResolvedConfig,
+            ) -> Result<(), crate::ProviderError> {
                 self.call_count.fetch_add(1, Ordering::SeqCst);
                 Err(crate::ProviderError::Model("load failed".into()))
             }
-            fn infer(&self, _req: crate::InferenceRequest) -> Result<crate::InferenceResponse, crate::ProviderError> {
+            fn infer(
+                &self,
+                _req: crate::InferenceRequest,
+            ) -> Result<crate::InferenceResponse, crate::ProviderError> {
                 unreachable!("should not be called")
             }
-            fn unload(&mut self) -> Result<(), crate::ProviderError> { Ok(()) }
+            fn unload(&mut self) -> Result<(), crate::ProviderError> {
+                Ok(())
+            }
             fn info(&self) -> crate::ModelInfo {
-                crate::ModelInfo { name: "failing".into(), version: "0.0.0".into(), backend: "test".into() }
+                crate::ModelInfo {
+                    name: "failing".into(),
+                    version: "0.0.0".into(),
+                    backend: "test".into(),
+                }
             }
         }
 
         let call_count = Arc::new(AtomicUsize::new(0));
-        let model = FailingModel { call_count: call_count.clone() };
+        let model = FailingModel {
+            call_count: call_count.clone(),
+        };
         let mut provider = LocalProvider::new(model, ResolvedConfig::default(), test_info());
 
         let result = provider.load();
@@ -268,14 +287,17 @@ mod tests {
 
     #[test]
     fn failed_can_retry_to_loading() {
-        use crate::{MockLocalModel, ProviderError};
+        use crate::ProviderError;
 
         struct FailOnceModel {
             call_count: Arc<AtomicUsize>,
         }
 
         impl crate::LocalModel for FailOnceModel {
-            fn load(&mut self, _config: &crate::ResolvedConfig) -> Result<(), crate::ProviderError> {
+            fn load(
+                &mut self,
+                _config: &crate::ResolvedConfig,
+            ) -> Result<(), crate::ProviderError> {
                 let count = self.call_count.fetch_add(1, Ordering::SeqCst);
                 if count == 0 {
                     Err(ProviderError::Model("first call fails".into()))
@@ -283,19 +305,33 @@ mod tests {
                     Ok(())
                 }
             }
-            fn infer(&self, _req: crate::InferenceRequest) -> Result<crate::InferenceResponse, crate::ProviderError> {
+            fn infer(
+                &self,
+                _req: crate::InferenceRequest,
+            ) -> Result<crate::InferenceResponse, crate::ProviderError> {
                 Ok(crate::InferenceResponse { text: "ok".into() })
             }
-            fn unload(&mut self) -> Result<(), crate::ProviderError> { Ok(()) }
+            fn unload(&mut self) -> Result<(), crate::ProviderError> {
+                Ok(())
+            }
             fn info(&self) -> crate::ModelInfo {
-                crate::ModelInfo { name: "fail-once".into(), version: "0.0.0".into(), backend: "test".into() }
+                crate::ModelInfo {
+                    name: "fail-once".into(),
+                    version: "0.0.0".into(),
+                    backend: "test".into(),
+                }
             }
         }
 
-        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
 
         let call_count = Arc::new(AtomicUsize::new(0));
-        let model = FailOnceModel { call_count: call_count.clone() };
+        let model = FailOnceModel {
+            call_count: call_count.clone(),
+        };
         let mut provider = LocalProvider::new(model, ResolvedConfig::default(), test_info());
 
         // First load fails
@@ -318,20 +354,34 @@ mod tests {
 
     #[test]
     fn provider_owns_exactly_one_model() {
-        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
-
         struct CountingModel {
             instance_id: usize,
         }
 
         impl crate::LocalModel for CountingModel {
-            fn load(&mut self, _config: &crate::ResolvedConfig) -> Result<(), crate::ProviderError> { Ok(()) }
-            fn infer(&self, _req: crate::InferenceRequest) -> Result<crate::InferenceResponse, crate::ProviderError> {
-                Ok(crate::InferenceResponse { text: format!("model-{}", self.instance_id) })
+            fn load(
+                &mut self,
+                _config: &crate::ResolvedConfig,
+            ) -> Result<(), crate::ProviderError> {
+                Ok(())
             }
-            fn unload(&mut self) -> Result<(), crate::ProviderError> { Ok(()) }
+            fn infer(
+                &self,
+                _req: crate::InferenceRequest,
+            ) -> Result<crate::InferenceResponse, crate::ProviderError> {
+                Ok(crate::InferenceResponse {
+                    text: format!("model-{}", self.instance_id),
+                })
+            }
+            fn unload(&mut self) -> Result<(), crate::ProviderError> {
+                Ok(())
+            }
             fn info(&self) -> crate::ModelInfo {
-                crate::ModelInfo { name: "counting".into(), version: "0.0.0".into(), backend: "test".into() }
+                crate::ModelInfo {
+                    name: "counting".into(),
+                    version: "0.0.0".into(),
+                    backend: "test".into(),
+                }
             }
         }
 
@@ -374,26 +424,45 @@ mod tests {
 
     #[test]
     fn no_inference_while_not_ready() {
-        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
 
         struct TrackInferenceModel {
             infer_count: Arc<AtomicUsize>,
         }
 
         impl crate::LocalModel for TrackInferenceModel {
-            fn load(&mut self, _config: &crate::ResolvedConfig) -> Result<(), crate::ProviderError> { Ok(()) }
-            fn infer(&self, _req: crate::InferenceRequest) -> Result<crate::InferenceResponse, crate::ProviderError> {
+            fn load(
+                &mut self,
+                _config: &crate::ResolvedConfig,
+            ) -> Result<(), crate::ProviderError> {
+                Ok(())
+            }
+            fn infer(
+                &self,
+                _req: crate::InferenceRequest,
+            ) -> Result<crate::InferenceResponse, crate::ProviderError> {
                 self.infer_count.fetch_add(1, Ordering::SeqCst);
                 Ok(crate::InferenceResponse { text: "ok".into() })
             }
-            fn unload(&mut self) -> Result<(), crate::ProviderError> { Ok(()) }
+            fn unload(&mut self) -> Result<(), crate::ProviderError> {
+                Ok(())
+            }
             fn info(&self) -> crate::ModelInfo {
-                crate::ModelInfo { name: "tracking".into(), version: "0.0.0".into(), backend: "test".into() }
+                crate::ModelInfo {
+                    name: "tracking".into(),
+                    version: "0.0.0".into(),
+                    backend: "test".into(),
+                }
             }
         }
 
         let infer_count = Arc::new(AtomicUsize::new(0));
-        let model = TrackInferenceModel { infer_count: infer_count.clone() };
+        let model = TrackInferenceModel {
+            infer_count: infer_count.clone(),
+        };
         let provider = LocalProvider::new(model, ResolvedConfig::default(), test_info());
 
         // Provider is Uninitialized — execute should fail without calling infer

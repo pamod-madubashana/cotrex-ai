@@ -5,13 +5,17 @@ use contract::{
 use std::error::Error;
 
 pub mod adapter;
+pub mod config;
 pub mod lifecycle;
 pub mod local_model;
 pub mod local_provider;
 pub mod mock_model;
-pub use adapter::{adapt_request, adapt_response, RuntimeRequest};
+pub use adapter::{RuntimeRequest, adapt_request, adapt_response};
+pub use config::{
+    ConfigError, EngineConfig, GlobalConfig, ModelConfig, ProjectConfig, ResolvedConfig,
+};
 pub use lifecycle::ProviderLifecycle;
-pub use local_model::{InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt, ResolvedConfig};
+pub use local_model::{InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt};
 pub use local_provider::LocalProvider;
 pub use mock_model::MockLocalModel;
 
