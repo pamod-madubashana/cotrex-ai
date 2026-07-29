@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../assets/cotrex.png" alt="Cotrex" width="220">
+  <img src="assets/cotrex.png" alt="Cotrex" width="220">
 </p>
 
 <p align="center">
