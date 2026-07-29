@@ -1,3 +1,5 @@
+pub mod command;
+
 use crate::error::ExecutionError;
 use crate::request::ExecutionRequest;
 use crate::result::ExecutionResult;
@@ -52,6 +54,8 @@ mod tests {
                 exit_code: Some(0),
                 duration_ms: 0,
                 error: None,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
             })
         }
     }

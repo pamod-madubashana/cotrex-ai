@@ -187,6 +187,8 @@ mod tests {
                     exit_code: Some(0),
                     duration_ms: 0,
                     error: None,
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
                 }),
             }
         }
@@ -207,6 +209,8 @@ mod tests {
                     exit_code: template.exit_code,
                     duration_ms: template.duration_ms,
                     error: template.error.clone(),
+                    stdout: template.stdout.clone(),
+                    stderr: template.stderr.clone(),
                 }),
                 Err(ExecutionError::ExecutorFailed(reason)) => {
                     Err(ExecutionError::ExecutorFailed(reason.clone()))
@@ -340,6 +344,8 @@ mod tests {
                     exit_code: Some(0),
                     duration_ms: 0,
                     error: None,
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
                 })
             }
         }
@@ -396,6 +402,8 @@ mod tests {
                     exit_code: Some(0),
                     duration_ms: 0,
                     error: None,
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
                 })
             }
         }
@@ -545,6 +553,8 @@ mod tests {
                     exit_code: Some(0),
                     duration_ms: 0,
                     error: None,
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
                 })
             }
         }

@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 /// The outcome of an execution attempt.
 ///
-/// Contains metadata only. Large output (stdout, stderr) is never stored
-/// in results — it belongs in external storage referenced by `execution_id`.
+/// Contains transient runtime data including stdout and stderr.
+/// Large output lives here only — it is never persisted in execution events.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionResult {
     /// The ID of the execution that produced this result.
@@ -20,6 +20,10 @@ pub struct ExecutionResult {
     pub duration_ms: u64,
     /// Error message, if the execution failed.
     pub error: Option<String>,
+    /// Captured stdout bytes.
+    pub stdout: Vec<u8>,
+    /// Captured stderr bytes.
+    pub stderr: Vec<u8>,
 }
 
 // ---------------------------------------------------------------------------
@@ -38,6 +42,8 @@ mod tests {
             exit_code: Some(0),
             duration_ms: 42,
             error: None,
+            stdout: b"hello\n".to_vec(),
+            stderr: Vec::new(),
         };
         let _cloned = result.clone();
     }
@@ -50,6 +56,8 @@ mod tests {
             exit_code: Some(0),
             duration_ms: 100,
             error: None,
+            stdout: b"output".to_vec(),
+            stderr: Vec::new(),
         };
         assert!(result.success);
         assert_eq!(result.exit_code, Some(0));
@@ -64,6 +72,8 @@ mod tests {
             exit_code: Some(1),
             duration_ms: 50,
             error: Some("command not found".into()),
+            stdout: Vec::new(),
+            stderr: b"error output".to_vec(),
         };
         assert!(!result.success);
         assert_eq!(result.exit_code, Some(1));
