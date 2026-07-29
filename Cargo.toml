@@ -8,5 +8,6 @@ members = [
     "agent",
     "providers/mock",
     "providers/json",
+    "providers/llama-cpp",
     "examples",
 ]

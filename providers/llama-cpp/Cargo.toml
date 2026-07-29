@@ -1,0 +1,11 @@
+[package]
+name = "llama-cpp-provider"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+contract = { path = "../../contract" }
+runtime = { path = "../../runtime" }
+
+[dev-dependencies]
+tempfile = "3"

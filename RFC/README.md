@@ -49,6 +49,7 @@ Example: `RFC-0001-kernel-event-store.md`
 | RFC-0005 | AI Runtime Integration | Implemented |
 | RFC-0006 | Persistent Event Store | Implemented |
 | RFC-0007 | Local Provider Runtime | Accepted |
+| RFC-0008 | llama.cpp Provider | Draft |
 
 ---
 
