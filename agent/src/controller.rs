@@ -1,11 +1,9 @@
-use std::path::PathBuf;
-
-use execution::{Capability, ExecutionAction};
-use execution::{ExecutionEngine, ExecutionRequest, ExecutionResult};
+use execution::{ExecutionEngine, ExecutionResult};
 
 use crate::context::AgentContext;
-use crate::decision::{AgentDecision, PlanStep};
+use crate::decision::{AgentDecision, AgentGoal};
 use crate::planner::Planner;
+use crate::resolver::CapabilityResolver;
 use crate::result::AgentResult;
 
 // ---------------------------------------------------------------------------
@@ -15,14 +13,14 @@ use crate::result::AgentResult;
 /// Bridges planning and execution.
 ///
 /// The controller is the only component that touches both the planner and
-/// the execution engine. It converts decisions into requests and results
-/// back into agent outcomes.
+/// the execution engine. It uses the resolver to convert decisions into
+/// requests.
 ///
 /// # Responsibility
 ///
 /// - Receive goals
 /// - Call the planner
-/// - Convert decisions into execution requests
+/// - Use resolver to convert decisions into execution requests
 /// - Call the execution engine
 /// - Convert results into agent results
 ///
@@ -32,33 +30,40 @@ use crate::result::AgentResult;
 /// - Executing commands (executor's job)
 /// - Recording events (engine's job)
 /// - Interpreting output (later milestone)
-pub struct AgentController<P: Planner> {
+/// - Creating execution requests (resolver's job)
+pub struct AgentController<P> {
     planner: P,
+    resolver: Box<dyn CapabilityResolver>,
     engine: ExecutionEngine,
 }
 
 impl<P: Planner> AgentController<P> {
     /// Create a new agent controller.
-    pub fn new(planner: P, engine: ExecutionEngine) -> Self {
-        Self { planner, engine }
+    pub fn new(planner: P, resolver: Box<dyn CapabilityResolver>, engine: ExecutionEngine) -> Self {
+        Self {
+            planner,
+            resolver,
+            engine,
+        }
     }
 
     /// Process a goal through the full agent cycle.
     ///
     /// ```text
-    /// AgentGoal → Planner → AgentDecision → ExecutionRequest → ExecutionEngine → AgentResult
+    /// AgentGoal → Planner → AgentDecision → Resolver → ExecutionRequest → ExecutionEngine → AgentResult
     /// ```
-    pub fn process_goal(
-        &self,
-        goal: &crate::decision::AgentGoal,
-    ) -> Result<AgentResult, AgentError> {
+    pub fn process_goal(&self, goal: &AgentGoal) -> Result<AgentResult, AgentError> {
         // Step 1: Plan
         let decision = self.planner.plan(&goal.description);
 
         // Step 2: Convert decision to execution request and execute
         match decision {
             AgentDecision::Execute(plan_step) => {
-                let request = self.plan_step_to_request(plan_step, goal.id)?;
+                let mut request = self
+                    .resolver
+                    .resolve(plan_step)
+                    .map_err(|e| AgentError::ExecutionFailed(e.to_string()))?;
+                request.id = goal.id;
                 let result = self.engine.submit(&request).map_err(|e| {
                     AgentError::ExecutionFailed(format!("execution engine error: {}", e))
                 })?;
@@ -77,51 +82,12 @@ impl<P: Planner> AgentController<P> {
     /// Process a goal with context.
     pub fn process_goal_with_context(
         &self,
-        goal: &crate::decision::AgentGoal,
+        goal: &AgentGoal,
         _context: &AgentContext,
     ) -> Result<AgentResult, AgentError> {
         // For now, context is ignored — the mock planner doesn't use it.
         // This method exists to validate the context boundary.
         self.process_goal(goal)
-    }
-
-    fn plan_step_to_request(
-        &self,
-        step: PlanStep,
-        goal_id: uuid::Uuid,
-    ) -> Result<ExecutionRequest, AgentError> {
-        let action = match step {
-            PlanStep::ExecuteCommand { command, args } => {
-                let full_command = if args.is_empty() {
-                    command
-                } else {
-                    format!("{} {}", command, args.join(" "))
-                };
-                ExecutionAction::CommandRun {
-                    command: full_command,
-                    working_directory: PathBuf::from("."),
-                }
-            }
-            PlanStep::WriteFile { path, content } => ExecutionAction::FileWrite {
-                path: PathBuf::from(path),
-                content,
-                working_directory: PathBuf::from("."),
-            },
-            PlanStep::DeleteFile { path } => ExecutionAction::FileDelete {
-                path: PathBuf::from(path),
-                working_directory: PathBuf::from("."),
-            },
-        };
-
-        let capabilities = match &action {
-            ExecutionAction::CommandRun { .. } => vec![Capability::CommandRun],
-            ExecutionAction::FileWrite { .. } => vec![Capability::FileWrite],
-            ExecutionAction::FileDelete { .. } => vec![Capability::FileDelete],
-        };
-
-        let mut request = ExecutionRequest::new(action, capabilities);
-        request.id = goal_id;
-        Ok(request)
     }
 
     fn result_to_agent_result(&self, goal_id: uuid::Uuid, result: &ExecutionResult) -> AgentResult {
@@ -174,8 +140,8 @@ impl std::error::Error for AgentError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decision::AgentGoal;
     use crate::planner::MockPlanner;
+    use crate::resolver::DefaultResolver;
     use execution::{ExecutionActionDiscriminant, ExecutionError, Executor};
     use execution::{ExecutionEngine, ExecutionPolicy, ExecutorRegistry};
 
@@ -222,7 +188,7 @@ mod tests {
             )
             .unwrap();
         let engine = ExecutionEngine::new(store, validator, registry);
-        AgentController::new(MockPlanner, engine)
+        AgentController::new(MockPlanner, Box::new(DefaultResolver), engine)
     }
 
     #[test]
