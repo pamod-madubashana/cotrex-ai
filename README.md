@@ -197,6 +197,7 @@ cargo clippy --workspace -- -D warnings
 | [RFC-0004](RFC/RFC-0004-execution-engine.md) | Execution Engine | Implemented |
 | [RFC-0005](RFC/RFC-0005-ai-runtime-integration.md) | AI Runtime Integration | Implemented |
 | [RFC-0006](RFC/RFC-0006-persistent-event-store.md) | Persistent Event Store | Implemented |
+| [RFC-0007](RFC/RFC-0007-local-provider-runtime.md) | Local Provider Runtime | Accepted |
 
 ---
 

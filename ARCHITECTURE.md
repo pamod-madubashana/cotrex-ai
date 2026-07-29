@@ -253,13 +253,24 @@ Scope:
 - Event boundary: stdout/stderr never in events
 - 185+ tests passing
 
-### Milestone 8: Planned
+### Milestone 8: In Progress (RFC-0007)
 
-First real inference provider (Candle or llama.cpp).
+Local Provider Runtime infrastructure.
 
-### Milestone 9: Planned (RFC-0005)
+Scope:
 
-AI Runtime Integration.
+- ProviderState lifecycle
+- LocalModel trait
+- InferenceRequest / InferenceResponse types
+- Configuration loading (global + project)
+- Provider wrapper
+- Context Builder trait
+- 13 invariants
+- No backend implementation (RFC-0008)
+
+### Milestone 9: Planned (RFC-0008)
+
+First real inference provider (llama.cpp).
 
 ---
 
