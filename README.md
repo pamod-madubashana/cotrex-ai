@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../assets/cotrex.png" alt="Cotrex" width="220">
+</p>
+
 # Cotrex AI Runtime
 
 A protocol-first AI runtime for the Cotrex kernel.
