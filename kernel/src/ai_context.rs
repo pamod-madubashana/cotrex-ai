@@ -109,28 +109,26 @@ impl Projection for AiContextProjection {
             EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
         })?;
 
-        match &event.payload {
-            EventPayload::FileChanged(fc) => {
-                let info = state
-                    .files
-                    .entry(fc.path.clone())
-                    .or_insert_with(|| FileInfo {
-                        last_operation: fc.operation,
-                        change_count: 0,
-                    });
-                info.last_operation = fc.operation;
-                info.change_count += 1;
+        if let EventPayload::FileChanged(fc) = &event.payload {
+            let info = state
+                .files
+                .entry(fc.path.clone())
+                .or_insert_with(|| FileInfo {
+                    last_operation: fc.operation,
+                    change_count: 0,
+                });
+            info.last_operation = fc.operation;
+            info.change_count += 1;
 
-                // Track recent changes (keep last 10)
-                let change_desc = format!(
-                    "{} {}",
-                    fc.path.display(),
-                    format!("{:?}", fc.operation).to_lowercase()
-                );
-                state.recent_changes.push(change_desc);
-                if state.recent_changes.len() > 10 {
-                    state.recent_changes.remove(0);
-                }
+            // Track recent changes (keep last 10)
+            let change_desc = format!(
+                "{} {}",
+                fc.path.display(),
+                format!("{:?}", fc.operation).to_lowercase()
+            );
+            state.recent_changes.push(change_desc);
+            if state.recent_changes.len() > 10 {
+                state.recent_changes.remove(0);
             }
         }
 

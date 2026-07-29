@@ -97,16 +97,14 @@ impl FileChangeProjection {
             EventStoreError::ProjectionFailure(format!("failed to acquire lock: {}", e))
         })?;
 
-        match &event.payload {
-            EventPayload::FileChanged(fc) => {
-                let entry = state.entry(fc.path.clone()).or_insert_with(|| FileRecord {
-                    path: fc.path.clone(),
-                    last_operation: fc.operation,
-                    change_count: 0,
-                });
-                entry.last_operation = fc.operation;
-                entry.change_count += 1;
-            }
+        if let EventPayload::FileChanged(fc) = &event.payload {
+            let entry = state.entry(fc.path.clone()).or_insert_with(|| FileRecord {
+                path: fc.path.clone(),
+                last_operation: fc.operation,
+                change_count: 0,
+            });
+            entry.last_operation = fc.operation;
+            entry.change_count += 1;
         }
 
         // Update checkpoint

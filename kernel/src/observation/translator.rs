@@ -105,6 +105,7 @@ mod tests {
                 assert_eq!(fc.path, PathBuf::from("a.txt"));
                 assert_eq!(fc.operation, FileOperation::Created);
             }
+            _ => panic!("expected FileChanged variant"),
         }
     }
 
@@ -121,6 +122,7 @@ mod tests {
             EventPayload::FileChanged(fc) => {
                 assert_eq!(fc.operation, FileOperation::Modified);
             }
+            _ => panic!("expected FileChanged variant"),
         }
     }
 
@@ -137,6 +139,7 @@ mod tests {
             EventPayload::FileChanged(fc) => {
                 assert_eq!(fc.operation, FileOperation::Deleted);
             }
+            _ => panic!("expected FileChanged variant"),
         }
     }
 
@@ -156,6 +159,7 @@ mod tests {
                 assert_eq!(fc.path, PathBuf::from("old.txt"));
                 assert_eq!(fc.operation, FileOperation::Deleted);
             }
+            _ => panic!("expected FileChanged variant"),
         }
 
         match &events[1] {
@@ -163,6 +167,7 @@ mod tests {
                 assert_eq!(fc.path, PathBuf::from("new.txt"));
                 assert_eq!(fc.operation, FileOperation::Created);
             }
+            _ => panic!("expected FileChanged variant"),
         }
     }
 }
