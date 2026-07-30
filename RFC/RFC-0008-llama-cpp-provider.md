@@ -1,6 +1,6 @@
 # RFC-0008: llama.cpp Provider
 
-**Status:** Draft
+**Status:** Accepted
 **Milestone:** 12
 **Depends on:** RFC-0007 (Local Provider Runtime)
 
@@ -317,7 +317,24 @@ The following are explicitly out of scope for this RFC:
 
 ---
 
-## 11. Exit Criteria
+## 11. Implementation Note
+
+The initial implementation was a skeleton that validated the
+`LocalModel` architecture without actual FFI: `load()` verified
+the GGUF path existed, and `infer()` returned a formatted echo
+of the prompt.
+
+This validated that the abstraction layer (RFC-0007) was sufficient
+for real inference engines. The real llama.cpp backend implementation
+follows the same design decisions documented above.
+
+Feature-gated via `real-inference` cargo feature. Unit tests remain
+fast (no FFI compilation). Integration tests require the feature
+and a GGUF model file.
+
+---
+
+## 12. Exit Criteria
 
 RFC-0008 is complete when:
 
