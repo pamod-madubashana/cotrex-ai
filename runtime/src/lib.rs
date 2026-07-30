@@ -5,19 +5,29 @@ use contract::{
 use std::error::Error;
 
 pub mod adapter;
+pub mod assembler;
+pub mod capability_parser;
 pub mod config;
+pub mod context;
 pub mod lifecycle;
 pub mod local_model;
 pub mod local_provider;
 pub mod mock_model;
+pub mod orchestrate;
+pub mod parser;
 pub use adapter::{RuntimeRequest, adapt_request, adapt_response};
+pub use assembler::{DefaultPromptAssembler, PromptAssembler};
+pub use capability_parser::CapabilityResponseParser;
 pub use config::{
     ConfigError, EngineConfig, GlobalConfig, ModelConfig, ProjectConfig, ResolvedConfig,
 };
+pub use context::{ContextBuilder, DefaultContextBuilder, InferenceContext, WorkspaceStatus};
 pub use lifecycle::ProviderLifecycle;
 pub use local_model::{InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt};
 pub use local_provider::LocalProvider;
 pub use mock_model::MockLocalModel;
+pub use orchestrate::execute_capability;
+pub use parser::{DefaultOutputParser, ModelOutput, OutputFormat, OutputParser};
 
 // ---------------------------------------------------------------------------
 // Provider error

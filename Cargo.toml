@@ -6,6 +6,7 @@ members = [
     "kernel",
     "execution",
     "agent",
+    "capabilities",
     "providers/mock",
     "providers/json",
     "providers/llama-cpp",
