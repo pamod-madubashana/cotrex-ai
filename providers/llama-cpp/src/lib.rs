@@ -3,6 +3,21 @@ use runtime::{
 };
 use std::path::PathBuf;
 
+#[cfg(feature = "real-inference")]
+use llama_cpp_2::context::params::LlamaContextParams;
+#[cfg(feature = "real-inference")]
+use llama_cpp_2::llama_backend::LlamaBackend;
+#[cfg(feature = "real-inference")]
+use llama_cpp_2::llama_batch::LlamaBatch;
+#[cfg(feature = "real-inference")]
+use llama_cpp_2::model::params::LlamaModelParams;
+#[cfg(feature = "real-inference")]
+use llama_cpp_2::model::{AddBos, LlamaModel};
+#[cfg(feature = "real-inference")]
+use llama_cpp_2::sampling::LlamaSampler;
+#[cfg(feature = "real-inference")]
+use std::num::NonZeroU32;
+
 // ---------------------------------------------------------------------------
 // LoadedConfig
 //
@@ -21,10 +36,15 @@ pub struct LoadedConfig {
 // LlamaCppModel
 //
 // First real LocalModel implementation. Stateless per-inference: each
-// infer() call creates a fresh session, executes, and destroys it.
+// infer() call creates a fresh context, executes, and destroys it.
 // ---------------------------------------------------------------------------
 
 pub struct LlamaCppModel {
+    #[cfg(feature = "real-inference")]
+    backend: Option<LlamaBackend>,
+    #[cfg(feature = "real-inference")]
+    model: Option<LlamaModel>,
+    #[cfg(not(feature = "real-inference"))]
     model_path: Option<PathBuf>,
     info: ModelInfo,
     loaded_config: Option<LoadedConfig>,
@@ -33,6 +53,11 @@ pub struct LlamaCppModel {
 impl LlamaCppModel {
     pub fn new() -> Self {
         Self {
+            #[cfg(feature = "real-inference")]
+            backend: None,
+            #[cfg(feature = "real-inference")]
+            model: None,
+            #[cfg(not(feature = "real-inference"))]
             model_path: None,
             info: ModelInfo {
                 name: "llama.cpp".into(),
@@ -61,14 +86,32 @@ impl LocalModel for LlamaCppModel {
             )));
         }
 
+        #[cfg(feature = "real-inference")]
+        {
+            let backend = LlamaBackend::init()
+                .map_err(|e| ProviderError::Model(format!("backend init failed: {e}")))?;
+
+            let model_params = LlamaModelParams::default().with_n_gpu_layers(config.gpu_layers);
+
+            let model = LlamaModel::load_from_file(&backend, &path, &model_params)
+                .map_err(|e| ProviderError::Model(format!("model load failed: {e}")))?;
+
+            self.backend = Some(backend);
+            self.model = Some(model);
+        }
+
+        #[cfg(not(feature = "real-inference"))]
+        {
+            self.model_path = Some(path.clone());
+        }
+
         self.loaded_config = Some(LoadedConfig {
-            model_path: path.clone(),
+            model_path: path,
             context: config.context,
             threads: config.threads,
             gpu_layers: config.gpu_layers,
         });
 
-        self.model_path = Some(path);
         self.info = ModelInfo {
             name: config.model_name.clone(),
             version: "loaded".into(),
@@ -79,24 +122,107 @@ impl LocalModel for LlamaCppModel {
     }
 
     fn infer(&self, request: InferenceRequest) -> Result<InferenceResponse, ProviderError> {
-        if self.model_path.is_none() {
-            return Err(ProviderError::Model("model not loaded".into()));
+        #[cfg(feature = "real-inference")]
+        {
+            let backend = self
+                .backend
+                .as_ref()
+                .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
+            let model = self
+                .model
+                .as_ref()
+                .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
+            let loaded = self
+                .loaded_config
+                .as_ref()
+                .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
+
+            // Tokenize prompt
+            let tokens = model
+                .str_to_token(&request.prompt.text, AddBos::Always)
+                .map_err(|e| ProviderError::Model(format!("tokenization failed: {e}")))?;
+
+            // Create context
+            let ctx_params = LlamaContextParams::default()
+                .with_n_ctx(NonZeroU32::new(loaded.context))
+                .with_n_threads(loaded.threads as i32);
+            let mut ctx = model
+                .new_context(backend, ctx_params)
+                .map_err(|e| ProviderError::Model(format!("context creation failed: {e}")))?;
+
+            // Process prompt tokens
+            let mut batch = LlamaBatch::new(tokens.len() + request.max_tokens as usize + 1, 1);
+            let last_index = (tokens.len() - 1) as i32;
+            for (i, token) in (0_i32..).zip(tokens.into_iter()) {
+                batch
+                    .add(token, i, &[0], i == last_index)
+                    .map_err(|e| ProviderError::Model(format!("batch add failed: {e}")))?;
+            }
+            ctx.decode(&mut batch)
+                .map_err(|e| ProviderError::Model(format!("decode failed: {e}")))?;
+
+            // Generate tokens
+            let mut sampler = LlamaSampler::chain_simple([
+                LlamaSampler::dist(1234),
+                LlamaSampler::greedy(),
+            ]);
+
+            let mut output = String::new();
+            let mut n_cur = batch.n_tokens();
+            let mut decoder = encoding_rs::UTF_8.new_decoder();
+
+            for _ in 0..request.max_tokens {
+                let token = sampler.sample(&ctx, batch.n_tokens() - 1);
+                sampler.accept(token);
+
+                if model.is_eog_token(token) {
+                    break;
+                }
+
+                let text = model
+                    .token_to_piece(token, &mut decoder, true, None)
+                    .map_err(|e| ProviderError::Model(format!("token decode failed: {e}")))?;
+                output.push_str(&text);
+
+                batch.clear();
+                batch
+                    .add(token, n_cur, &[0], true)
+                    .map_err(|e| ProviderError::Model(format!("batch add failed: {e}")))?;
+                ctx.decode(&mut batch)
+                    .map_err(|e| ProviderError::Model(format!("decode failed: {e}")))?;
+
+                n_cur += 1;
+            }
+
+            Ok(InferenceResponse { text: output })
         }
 
-        let _loaded = self
-            .loaded_config
-            .as_ref()
-            .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
-
-        // Stateless inference: create session, execute, destroy.
-        // Actual llama.cpp integration will replace this block.
-        let output = format!("llama.cpp: {}", request.prompt.text);
-
-        Ok(InferenceResponse { text: output })
+        #[cfg(not(feature = "real-inference"))]
+        {
+            if self.model_path.is_none() {
+                return Err(ProviderError::Model("model not loaded".into()));
+            }
+            let _loaded = self
+                .loaded_config
+                .as_ref()
+                .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
+            let output = format!("llama.cpp: {}", request.prompt.text);
+            Ok(InferenceResponse { text: output })
+        }
     }
 
     fn unload(&mut self) -> Result<(), ProviderError> {
-        self.model_path = None;
+        #[cfg(feature = "real-inference")]
+        {
+            self.model = None;
+            self.backend = None;
+        }
+
+        #[cfg(not(feature = "real-inference"))]
+        {
+            self.model_path = None;
+        }
+
         self.loaded_config = None;
         self.info = ModelInfo {
             name: "llama.cpp".into(),
@@ -130,7 +256,10 @@ mod tests {
         assert_eq!(model.info.name, "llama.cpp");
         assert_eq!(model.info.version, "unknown");
         assert_eq!(model.info.backend, "llama.cpp");
+        #[cfg(not(feature = "real-inference"))]
         assert!(model.model_path.is_none());
+        #[cfg(feature = "real-inference")]
+        assert!(model.model.is_none());
         assert!(model.loaded_config.is_none());
     }
 
@@ -214,15 +343,27 @@ mod tests {
 
         // First cycle
         model.load(&config).unwrap();
+        #[cfg(not(feature = "real-inference"))]
         assert!(model.model_path.is_some());
+        #[cfg(feature = "real-inference")]
+        assert!(model.model.is_some());
         model.unload().unwrap();
+        #[cfg(not(feature = "real-inference"))]
         assert!(model.model_path.is_none());
+        #[cfg(feature = "real-inference")]
+        assert!(model.model.is_none());
 
         // Second cycle
         model.load(&config).unwrap();
+        #[cfg(not(feature = "real-inference"))]
         assert!(model.model_path.is_some());
+        #[cfg(feature = "real-inference")]
+        assert!(model.model.is_some());
         model.unload().unwrap();
+        #[cfg(not(feature = "real-inference"))]
         assert!(model.model_path.is_none());
+        #[cfg(feature = "real-inference")]
+        assert!(model.model.is_none());
     }
 
     #[test]
@@ -346,24 +487,119 @@ mod tests {
         let (config, _dir) = fake_model_config();
         let mut provider = LocalProvider::new(model, config, test_info());
 
-        // Uninitialized → Degraded
+        // Uninitialized -> Degraded
         assert!(matches!(
             provider.health(),
             contract::ProviderHealth::Degraded { .. }
         ));
 
-        // Ready → Healthy
+        // Ready -> Healthy
         provider.load().unwrap();
         assert!(matches!(
             provider.health(),
             contract::ProviderHealth::Healthy
         ));
 
-        // Unloaded → Degraded
+        // Unloaded -> Degraded
         provider.unload().unwrap();
         assert!(matches!(
             provider.health(),
             contract::ProviderHealth::Degraded { .. }
         ));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (require real-inference feature + GGUF model)
+// ---------------------------------------------------------------------------
+
+#[cfg(all(test, feature = "real-inference"))]
+mod integration {
+    use super::*;
+    use runtime::{CapabilityProvider, LocalProvider};
+    use std::path::PathBuf;
+
+    fn test_model_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("qwen2.5-0.5b-instruct-q4_k_m.gguf")
+    }
+
+    #[test]
+    fn load_populates_info_from_gguf() {
+        let mut model = LlamaCppModel::new();
+        let config = ResolvedConfig {
+            model_path: test_model_path(),
+            model_name: "qwen2.5-0.5b".into(),
+            ..ResolvedConfig::default()
+        };
+        model.load(&config).unwrap();
+        let info = model.info();
+        assert_eq!(info.backend, "llama.cpp");
+        assert_eq!(info.version, "loaded");
+    }
+
+    #[test]
+    fn infer_returns_generated_text() {
+        let mut model = LlamaCppModel::new();
+        let config = ResolvedConfig {
+            model_path: test_model_path(),
+            ..ResolvedConfig::default()
+        };
+        model.load(&config).unwrap();
+
+        let request = InferenceRequest {
+            prompt: runtime::Prompt::new("What is 2 + 2? Answer with just the number."),
+            temperature: 0.0,
+            max_tokens: 16,
+        };
+        let response = model.infer(request).unwrap();
+        assert!(!response.text.is_empty());
+        assert_ne!(
+            response.text,
+            "llama.cpp: What is 2 + 2? Answer with just the number."
+        );
+    }
+
+    #[test]
+    fn build_summary_end_to_end() {
+        let mut model = LlamaCppModel::new();
+        let config = ResolvedConfig {
+            model_path: test_model_path(),
+            ..ResolvedConfig::default()
+        };
+        model.load(&config).unwrap();
+
+        let info = contract::ProviderInfo {
+            name: "llama.cpp".into(),
+            version: "0.1.0".into(),
+            supported_capabilities: vec![
+                contract::CapabilityKind::BuildSummary,
+                contract::CapabilityKind::ExplainRust,
+            ],
+        };
+        let mut provider = LocalProvider::new(model, config, info);
+        provider.load().unwrap();
+
+        let request = contract::CapabilityRequest::BuildSummary(
+            contract::BuildSummaryRequest {
+                metadata: contract::RequestMetadata::new(),
+                command: "cargo build".into(),
+                exit_code: 0,
+                stdout: "Compiling project v0.1.0\nFinished dev [optimized] target(s)".into(),
+                stderr: String::new(),
+                prompt: String::new(),
+                temperature: 0.1,
+                max_tokens: 256,
+            },
+        );
+
+        let response = provider.execute(request).unwrap();
+        match response {
+            contract::CapabilityResponse::BuildSummary(resp) => {
+                assert!(!resp.summary.is_empty());
+            }
+            _ => panic!("expected BuildSummary response"),
+        }
     }
 }
