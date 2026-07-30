@@ -24,46 +24,47 @@
 
 ## What is Cotrex AI
 
-Cotrex AI Runtime (`cotrex-ai`) is the implementation of the Intelligence Brain's AI execution layer. It abstracts AI inference providers behind a stable, typed protocol while exposing a deterministic interface to the Cotrex kernel.
+Cotrex AI Runtime (`cotrex-ai`) is the AI execution layer for the Cotrex agent OS. It abstracts inference providers behind a stable, typed protocol and provides an orchestration pipeline that turns capability requests into model inference.
 
-- **What it does**: Provides AI inference capabilities to the Cotrex kernel
+- **What it does**: Provides AI inference and orchestration to the Cotrex kernel
 - **Why it's useful**: Models are replaceable, the protocol is not
-- **How it works**: Takes capability requests, dispatches to providers, returns typed responses
+- **How it works**: Takes capability requests, builds context, assembles prompts, dispatches to providers, parses responses
 
 ---
 
 ## Architecture
 
 ```text
-                 Cotrex
-
-            Kernel Layer
-                  │
-                  ▼
-        Intelligence Brain
-                  │
-                  ▼
-          cotrex-ai Runtime
-                  │
-        ┌─────────┴─────────┐
-        ▼                   ▼
- Capability Provider     Execution Runtime
-        │                   │
-        ▼                   ▼
- Inference Providers    Executor Registry
-                            │
-              ┌─────────────┼─────────────┐
-              ▼             ▼             ▼
-          Command       FileWrite      FileDelete
+Agent
+    │
+    ▼
+MCP (JSON-RPC)
+    │
+    ▼
+Orchestrator
+    │
+    ├── ContextSource (read-only, returns InferenceContext)
+    │       └── KernelContextSource (bridges kernel projections)
+    │
+    ├── PromptAssembler (combines context + capability data)
+    ├── CapabilityProvider (executes inference)
+    ├── OutputParser (classifies model output)
+    └── CapabilityResponseParser (extracts typed response)
+    │
+    ▼
+Provider
+    │
+    ▼
+llama.cpp / mock / json-fixture
 ```
 
-**Layer 1: Kernel** — Owns project state, event sourcing, observation.
+**Kernel** — Owns project state, event sourcing, observation. Standalone crate with no internal dependencies.
 
-**Layer 2: Intelligence Brain** — Orchestrates AI workflows, decides when to invoke capabilities.
+**Runtime** — Orchestration pipeline, provider abstraction, context source trait. Depends only on contract.
 
-**Layer 3: cotrex-ai Runtime** — Provider abstraction, capability dispatch, execution orchestration, and runtime error handling.
+**Providers** — Implement `CapabilityProvider` trait, execute AI inference. Optional (behind `local-model` feature).
 
-**Layer 4: Inference Providers** — Implement `CapabilityProvider` trait, execute AI inference.
+**Composition root** (Cotrex binary) — Wires kernel, runtime, and providers together. The bridge between kernel projections and runtime context lives here.
 
 ---
 
@@ -72,10 +73,11 @@ Cotrex AI Runtime (`cotrex-ai`) is the implementation of the Intelligence Brain'
 ```text
 cotrex-ai/
 ├── contract/        # Protocol types (no logic, no providers)
-├── runtime/         # CapabilityProvider trait + extension methods
-├── kernel/          # Event Store, projections, event model
+├── runtime/         # Orchestration pipeline, ContextSource trait, provider abstraction
+├── kernel/          # Event Store, projections, observation pipeline
 ├── execution/       # Execution engine, registry, and built-in executors
 ├── providers/
+│   ├── llama-cpp/   # llama.cpp FFI provider (optional)
 │   ├── mock/        # Deterministic mock responses
 │   └── json/        # JSON fixture provider
 ├── examples/        # Usage examples
@@ -91,11 +93,18 @@ cotrex-ai/
 ### Prerequisites
 
 - Rust 2024 edition
+- CMake (for llama.cpp compilation)
 
 ### Build
 
 ```bash
 cargo build --workspace
+```
+
+### Build with local inference
+
+```bash
+cargo build --workspace --features local-model
 ```
 
 ### Test
@@ -131,8 +140,10 @@ cargo clippy --workspace -- -D warnings
 | Type | Purpose |
 |------|---------|
 | `CapabilityProvider` | Core trait: `Send + Sync`, `info()`, `health()`, `execute()` |
-| `CapabilityProviderExt` | Ergonomic methods: `.build_summary()`, `.explain_rust()` |
-| `RuntimeError` | Execution errors: `Provider`, `InvalidResponse`, `Capability` |
+| `ContextSource` | Read-only trait: `context() -> Result<InferenceContext, RuntimeError>` |
+| `Orchestrator` | Pipeline: context → prompt → provider → parse → normalize |
+| `InferenceContext` | Workspace state for AI: recent changes, status, file count |
+| `NullContextSource` | Fallback when no live workspace is available |
 
 ### Kernel
 
@@ -141,9 +152,11 @@ cargo clippy --workspace -- -D warnings
 | `Event` | Envelope: `id`, `sequence`, `occurred_at`, `payload` |
 | `EventPayload` | Enum with `FileChanged` variant |
 | `EventStore` | Trait-based append-only store with sequence ordering |
-| `MemoryEventStore` | In-memory implementation for tests and lightweight usage |
+| `MemoryEventStore` | In-memory implementation for tests |
 | `PersistentEventStore` | File-backed JSONL implementation for production |
-| `FileChangeProjection` | Derives file state from events |
+| `ProjectionEngine` | Multi-projection coordinator with failure isolation |
+| `AiContextProjection` | Semantic summary for AI: workspace status, recent changes |
+| `ObservationPipeline` | Filter → Translate → Append pipeline |
 
 ### Execution Runtime
 
@@ -151,10 +164,6 @@ cargo clippy --workspace -- -D warnings
 |------|---------|
 | `ExecutionEngine` | Orchestrates execution lifecycle and event recording |
 | `ExecutorRegistry` | Registers and resolves execution capabilities |
-| `CommandExecutor` | Executes OS commands with controlled output handling |
-| `FileWriteExecutor` | Writes files within a validated working directory |
-| `FileDeleteExecutor` | Deletes files within a validated working directory |
-| `ExecutionResult` | Transient execution output, including stdout/stderr |
 
 ---
 
@@ -162,16 +171,15 @@ cargo clippy --workspace -- -D warnings
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| 1 | Protocol + Runtime + Mock provider | ✅ Complete |
-| 2 | Documentation consolidation | ✅ Complete |
-| 3 | Documentation frozen | ✅ Complete |
-| 4 | RFC-0001: Kernel Event Store | ✅ Complete |
-| 5 | RFC-0002: Projection Engine | ✅ Complete |
-| 6 | RFC-0003: Observation Pipeline | ✅ Complete |
-| 7 | RFC-0004: Execution Engine | ✅ Complete |
-| 8 | Agent Reasoning Layer | ✅ Complete |
-| 9 | RFC-0005: AI Runtime Integration | ✅ Complete |
-| 10 | RFC-0006: Persistent Event Store | ✅ Complete |
+| A | Foundation — contract, runtime, mock provider | ✅ Complete |
+| B | Contracts — protocol types, capability dispatch | ✅ Complete |
+| C | Providers — mock, json-fixture, extension methods | ✅ Complete |
+| D | Kernel — event store, projections, observation | ✅ Complete |
+| E | Real Inference — llama.cpp provider activation | ✅ Complete |
+| F | Model Manager — download, resolve, registry | ✅ Complete |
+| G | Provider Abstraction — lazy loading, factory trait | ✅ Complete |
+| H | Intelligence Orchestration — orchestrator pipeline, MCP migration | ✅ Complete |
+| I | Workspace Intelligence — ContextSource, kernel bridge | ✅ Complete |
 
 ---
 
@@ -197,7 +205,8 @@ cargo clippy --workspace -- -D warnings
 | [RFC-0004](RFC/RFC-0004-execution-engine.md) | Execution Engine | Implemented |
 | [RFC-0005](RFC/RFC-0005-ai-runtime-integration.md) | AI Runtime Integration | Implemented |
 | [RFC-0006](RFC/RFC-0006-persistent-event-store.md) | Persistent Event Store | Implemented |
-| [RFC-0007](RFC/RFC-0007-local-provider-runtime.md) | Local Provider Runtime | Accepted |
+| [RFC-0007](RFC/RFC-0007-local-provider-runtime.md) | Local Provider Runtime | Implemented |
+| [RFC-0008](RFC/RFC-0008-llama-cpp-provider.md) | llama.cpp Provider | Implemented |
 
 ---
 
