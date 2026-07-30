@@ -31,6 +31,9 @@ pub struct InferenceContext {
     pub workspace_status: WorkspaceStatus,
     pub file_count: usize,
     pub hash: u64,
+    pub git_branch: Option<String>,
+    pub git_dirty: bool,
+    pub git_modified_count: usize,
 }
 
 impl Default for InferenceContext {
@@ -40,13 +43,23 @@ impl Default for InferenceContext {
             workspace_status: WorkspaceStatus::Unknown,
             file_count: 0,
             hash: 0,
+            git_branch: None,
+            git_dirty: false,
+            git_modified_count: 0,
         }
     }
 }
 
 impl InferenceContext {
     pub fn compute_hash(&self) -> u64 {
-        compute_hash(&self.recent_changes, self.workspace_status, self.file_count)
+        compute_hash(
+            &self.recent_changes,
+            self.workspace_status,
+            self.file_count,
+            self.git_branch.as_deref(),
+            self.git_dirty,
+            self.git_modified_count,
+        )
     }
 }
 
@@ -84,7 +97,14 @@ impl ContextSource for NullContextSource {
 // ordering independence.
 // ---------------------------------------------------------------------------
 
-fn compute_hash(changes: &[String], status: WorkspaceStatus, file_count: usize) -> u64 {
+fn compute_hash(
+    changes: &[String],
+    status: WorkspaceStatus,
+    file_count: usize,
+    git_branch: Option<&str>,
+    git_dirty: bool,
+    git_modified_count: usize,
+) -> u64 {
     let mut sorted: Vec<&String> = changes.iter().collect();
     sorted.sort();
 
@@ -100,6 +120,11 @@ fn compute_hash(changes: &[String], status: WorkspaceStatus, file_count: usize) 
     for change in sorted {
         change.hash(&mut hasher);
     }
+
+    // Hash git context
+    git_branch.hash(&mut hasher);
+    (git_dirty as u8).hash(&mut hasher);
+    git_modified_count.hash(&mut hasher);
 
     hasher.finish()
 }
@@ -141,6 +166,9 @@ mod tests {
             workspace_status: WorkspaceStatus::Clean,
             file_count: 1,
             hash: 0,
+            git_branch: None,
+            git_dirty: false,
+            git_modified_count: 0,
         };
         let computed = ctx.compute_hash();
         assert_ne!(computed, 0);
@@ -149,8 +177,8 @@ mod tests {
     #[test]
     fn hash_deterministic() {
         let changes = vec!["main.rs".into(), "lib.rs".into()];
-        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 2);
-        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 2);
+        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0);
+        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0);
         assert_eq!(h1, h2);
     }
 
@@ -158,24 +186,24 @@ mod tests {
     fn hash_sort_independent() {
         let a = vec!["main.rs".into(), "lib.rs".into()];
         let b = vec!["lib.rs".into(), "main.rs".into()];
-        let h1 = compute_hash(&a, WorkspaceStatus::Modified, 2);
-        let h2 = compute_hash(&b, WorkspaceStatus::Modified, 2);
+        let h1 = compute_hash(&a, WorkspaceStatus::Modified, 2, None, false, 0);
+        let h2 = compute_hash(&b, WorkspaceStatus::Modified, 2, None, false, 0);
         assert_eq!(h1, h2);
     }
 
     #[test]
     fn hash_differs_by_status() {
         let changes = vec!["a.rs".into()];
-        let h1 = compute_hash(&changes, WorkspaceStatus::Clean, 1);
-        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 1);
+        let h1 = compute_hash(&changes, WorkspaceStatus::Clean, 1, None, false, 0);
+        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 1, None, false, 0);
         assert_ne!(h1, h2);
     }
 
     #[test]
     fn hash_differs_by_file_count() {
         let changes = vec!["a.rs".into()];
-        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 1);
-        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 2);
+        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 1, None, false, 0);
+        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0);
         assert_ne!(h1, h2);
     }
 
@@ -183,8 +211,8 @@ mod tests {
     fn hash_differs_by_changes() {
         let a = vec!["a.rs".into()];
         let b = vec!["b.rs".into()];
-        let h1 = compute_hash(&a, WorkspaceStatus::Modified, 1);
-        let h2 = compute_hash(&b, WorkspaceStatus::Modified, 1);
+        let h1 = compute_hash(&a, WorkspaceStatus::Modified, 1, None, false, 0);
+        let h2 = compute_hash(&b, WorkspaceStatus::Modified, 1, None, false, 0);
         assert_ne!(h1, h2);
     }
 

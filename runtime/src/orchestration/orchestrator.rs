@@ -234,6 +234,9 @@ mod tests {
             workspace_status: WorkspaceStatus::Modified,
             file_count: 42,
             hash: 12345,
+            git_branch: None,
+            git_dirty: false,
+            git_modified_count: 0,
         };
 
         let request = OrchestrationRequest {

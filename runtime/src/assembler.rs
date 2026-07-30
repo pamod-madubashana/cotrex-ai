@@ -29,6 +29,15 @@ impl PromptAssembler for DefaultPromptAssembler {
         prompt.push_str("## Workspace Context\n\n");
         prompt.push_str(&format!("Status: {:?}\n", context.workspace_status));
         prompt.push_str(&format!("Files tracked: {}\n", context.file_count));
+
+        if let Some(ref branch) = context.git_branch {
+            prompt.push_str(&format!("Branch: {}\n", branch));
+        }
+        prompt.push_str(&format!("Working tree dirty: {}\n", context.git_dirty));
+        if context.git_modified_count > 0 {
+            prompt.push_str(&format!("Modified files: {}\n", context.git_modified_count));
+        }
+
         prompt.push_str(&format!("Context hash: {:016x}\n\n", context.hash));
 
         if !context.recent_changes.is_empty() {
@@ -81,6 +90,9 @@ mod tests {
             workspace_status: WorkspaceStatus::Modified,
             file_count: 5,
             hash: 0xdeadbeef,
+            git_branch: Some("main".into()),
+            git_dirty: true,
+            git_modified_count: 2,
         }
     }
 
@@ -133,6 +145,9 @@ mod tests {
             workspace_status: WorkspaceStatus::Clean,
             file_count: 0,
             hash: 0,
+            git_branch: None,
+            git_dirty: false,
+            git_modified_count: 0,
         };
         let request = CapabilityRequest::BuildSummary(BuildSummaryRequest {
             metadata: RequestMetadata::new(),
@@ -157,6 +172,9 @@ mod tests {
             workspace_status: WorkspaceStatus::Modified,
             file_count: 1,
             hash: 0,
+            git_branch: None,
+            git_dirty: false,
+            git_modified_count: 0,
         };
         let request = CapabilityRequest::BuildSummary(BuildSummaryRequest {
             metadata: RequestMetadata::new(),
