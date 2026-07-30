@@ -9,6 +9,10 @@ thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+ureq = "3"
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
+llama-cpp-provider = { path = "../providers/llama-cpp", features = ["real-inference"] }

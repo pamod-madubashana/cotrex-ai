@@ -14,6 +14,56 @@ pub trait CapabilityResponseParser {
 }
 
 // ---------------------------------------------------------------------------
+// DefaultCapabilityResponseParser
+//
+// Combined parser that handles all capability variants.
+// Dispatch should use this, not individual capability parsers.
+// ---------------------------------------------------------------------------
+
+pub struct DefaultCapabilityResponseParser;
+
+impl CapabilityResponseParser for DefaultCapabilityResponseParser {
+    fn parse(&self, output: &ModelOutput, request: &CapabilityRequest) -> CapabilityResponse {
+        match request {
+            CapabilityRequest::BuildSummary(_) => {
+                let mut summary = output.raw.clone();
+                let mut success = true;
+
+                if let crate::parser::OutputFormat::Json(ref val) = output.format {
+                    if let Some(s) = val.get("summary").and_then(|v| v.as_str()) {
+                        summary = s.to_string();
+                    }
+                    if let Some(b) = val.get("success").and_then(|v| v.as_bool()) {
+                        success = b;
+                    }
+                }
+
+                if output.raw.is_empty() {
+                    success = false;
+                }
+
+                CapabilityResponse::BuildSummary(contract::BuildSummaryResponse {
+                    success,
+                    summary,
+                    recommendation: None,
+                })
+            }
+            CapabilityRequest::ExplainRust(_) => {
+                let mut explanation = output.raw.clone();
+
+                if let crate::parser::OutputFormat::Json(ref val) = output.format
+                    && let Some(e) = val.get("explanation").and_then(|v| v.as_str())
+                {
+                    explanation = e.to_string();
+                }
+
+                CapabilityResponse::ExplainRust(contract::ExplainRustResponse { explanation })
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

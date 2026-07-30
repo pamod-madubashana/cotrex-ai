@@ -1,6 +1,8 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use crate::RuntimeError;
+
 // ---------------------------------------------------------------------------
 // WorkspaceStatus
 //
@@ -31,6 +33,17 @@ pub struct InferenceContext {
     pub hash: u64,
 }
 
+impl Default for InferenceContext {
+    fn default() -> Self {
+        Self {
+            recent_changes: Vec::new(),
+            workspace_status: WorkspaceStatus::Unknown,
+            file_count: 0,
+            hash: 0,
+        }
+    }
+}
+
 impl InferenceContext {
     pub fn compute_hash(&self) -> u64 {
         compute_hash(&self.recent_changes, self.workspace_status, self.file_count)
@@ -38,43 +51,29 @@ impl InferenceContext {
 }
 
 // ---------------------------------------------------------------------------
-// ContextBuilder
+// ContextSource
 //
-// Trait that reads projection state and produces InferenceContext.
+// Read-only trait that produces InferenceContext. Implementations
+// read from whatever data source they wrap (kernel, null, mock).
+// The runtime never mutates workspace state through this trait.
 // ---------------------------------------------------------------------------
 
-pub trait ContextBuilder {
-    fn build_context(&self, recent_changes: &[String], file_count: usize) -> InferenceContext;
+pub trait ContextSource: Send + Sync {
+    fn context(&self) -> Result<InferenceContext, RuntimeError>;
 }
 
 // ---------------------------------------------------------------------------
-// DefaultContextBuilder
+// NullContextSource
 //
-// Default implementation that extracts fields and computes hash.
-// Sorts recent changes to ensure ordering independence.
+// Fallback when no live workspace is available. Returns the
+// canonical "no workspace" InferenceContext::default().
 // ---------------------------------------------------------------------------
 
-pub struct DefaultContextBuilder;
+pub struct NullContextSource;
 
-impl ContextBuilder for DefaultContextBuilder {
-    fn build_context(&self, recent_changes: &[String], file_count: usize) -> InferenceContext {
-        let mut changes: Vec<String> = recent_changes.to_vec();
-        changes.sort();
-
-        let status = if file_count == 0 {
-            WorkspaceStatus::Unknown
-        } else {
-            WorkspaceStatus::Modified
-        };
-
-        let hash = compute_hash(&changes, status, file_count);
-
-        InferenceContext {
-            recent_changes: changes,
-            workspace_status: status,
-            file_count,
-            hash,
-        }
+impl ContextSource for NullContextSource {
+    fn context(&self) -> Result<InferenceContext, RuntimeError> {
+        Ok(InferenceContext::default())
     }
 }
 
@@ -124,6 +123,15 @@ mod tests {
     fn workspace_status_is_debug() {
         let status = WorkspaceStatus::Modified;
         let _ = format!("{:?}", status);
+    }
+
+    #[test]
+    fn inference_context_default() {
+        let ctx = InferenceContext::default();
+        assert!(ctx.recent_changes.is_empty());
+        assert_eq!(ctx.workspace_status, WorkspaceStatus::Unknown);
+        assert_eq!(ctx.file_count, 0);
+        assert_eq!(ctx.hash, 0);
     }
 
     #[test]
@@ -181,25 +189,9 @@ mod tests {
     }
 
     #[test]
-    fn default_context_builder_sorts_changes() {
-        let builder = DefaultContextBuilder;
-        let changes: Vec<String> = vec!["z.rs".into(), "a.rs".into(), "m.rs".into()];
-        let ctx = builder.build_context(&changes, 3);
-        let expected: Vec<String> = vec!["a.rs".into(), "m.rs".into(), "z.rs".into()];
-        assert_eq!(ctx.recent_changes, expected);
-    }
-
-    #[test]
-    fn default_context_builder_empty_is_unknown() {
-        let builder = DefaultContextBuilder;
-        let ctx = builder.build_context(&[], 0);
-        assert_eq!(ctx.workspace_status, WorkspaceStatus::Unknown);
-    }
-
-    #[test]
-    fn default_context_builder_nonempty_is_modified() {
-        let builder = DefaultContextBuilder;
-        let ctx = builder.build_context(&["a.rs".into()], 1);
-        assert_eq!(ctx.workspace_status, WorkspaceStatus::Modified);
+    fn null_context_source_returns_default() {
+        let source = NullContextSource;
+        let ctx = source.context().unwrap();
+        assert_eq!(ctx, InferenceContext::default());
     }
 }

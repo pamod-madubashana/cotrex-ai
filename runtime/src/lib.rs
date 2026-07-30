@@ -9,24 +9,32 @@ pub mod assembler;
 pub mod capability_parser;
 pub mod config;
 pub mod context;
+pub mod factory;
+pub mod lazy_provider;
 pub mod lifecycle;
 pub mod local_model;
 pub mod local_provider;
 pub mod mock_model;
+pub mod model_manager;
 pub mod orchestrate;
+pub mod orchestration;
 pub mod parser;
 pub use adapter::{RuntimeRequest, adapt_request, adapt_response};
 pub use assembler::{DefaultPromptAssembler, PromptAssembler};
-pub use capability_parser::CapabilityResponseParser;
+pub use capability_parser::{CapabilityResponseParser, DefaultCapabilityResponseParser};
 pub use config::{
     ConfigError, EngineConfig, GlobalConfig, ModelConfig, ProjectConfig, ResolvedConfig,
 };
-pub use context::{ContextBuilder, DefaultContextBuilder, InferenceContext, WorkspaceStatus};
+pub use context::{ContextSource, InferenceContext, NullContextSource, WorkspaceStatus};
+pub use factory::ProviderFactory;
+pub use lazy_provider::LazyProvider;
 pub use lifecycle::ProviderLifecycle;
 pub use local_model::{InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt};
 pub use local_provider::LocalProvider;
 pub use mock_model::MockLocalModel;
+pub use model_manager::ModelManagerError;
 pub use orchestrate::execute_capability;
+pub use orchestration::{OrchestrationRequest, OrchestrationResponse, Orchestrator};
 pub use parser::{DefaultOutputParser, ModelOutput, OutputFormat, OutputParser};
 
 // ---------------------------------------------------------------------------

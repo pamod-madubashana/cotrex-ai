@@ -17,6 +17,8 @@ use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 #[cfg(feature = "real-inference")]
 use std::num::NonZeroU32;
+#[cfg(feature = "real-inference")]
+use std::sync::OnceLock;
 
 // ---------------------------------------------------------------------------
 // LoadedConfig
@@ -33,6 +35,21 @@ pub struct LoadedConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Global llama.cpp backend — initialized once, shared across all instances.
+// LlamaBackend is a ZST wrapper around a global FFI singleton. OnceLock
+// ensures thread-safe one-time initialization without ownership issues.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "real-inference")]
+static LLAMA_BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
+
+#[cfg(feature = "real-inference")]
+fn get_backend() -> Result<&'static LlamaBackend, ProviderError> {
+    Ok(LLAMA_BACKEND
+        .get_or_init(|| LlamaBackend::init().expect("failed to initialize llama.cpp backend")))
+}
+
+// ---------------------------------------------------------------------------
 // LlamaCppModel
 //
 // First real LocalModel implementation. Stateless per-inference: each
@@ -40,8 +57,6 @@ pub struct LoadedConfig {
 // ---------------------------------------------------------------------------
 
 pub struct LlamaCppModel {
-    #[cfg(feature = "real-inference")]
-    backend: Option<LlamaBackend>,
     #[cfg(feature = "real-inference")]
     model: Option<LlamaModel>,
     #[cfg(not(feature = "real-inference"))]
@@ -53,8 +68,6 @@ pub struct LlamaCppModel {
 impl LlamaCppModel {
     pub fn new() -> Self {
         Self {
-            #[cfg(feature = "real-inference")]
-            backend: None,
             #[cfg(feature = "real-inference")]
             model: None,
             #[cfg(not(feature = "real-inference"))]
@@ -88,15 +101,13 @@ impl LocalModel for LlamaCppModel {
 
         #[cfg(feature = "real-inference")]
         {
-            let backend = LlamaBackend::init()
-                .map_err(|e| ProviderError::Model(format!("backend init failed: {e}")))?;
+            let backend = get_backend()?;
 
             let model_params = LlamaModelParams::default().with_n_gpu_layers(config.gpu_layers);
 
-            let model = LlamaModel::load_from_file(&backend, &path, &model_params)
+            let model = LlamaModel::load_from_file(backend, &path, &model_params)
                 .map_err(|e| ProviderError::Model(format!("model load failed: {e}")))?;
 
-            self.backend = Some(backend);
             self.model = Some(model);
         }
 
@@ -124,10 +135,7 @@ impl LocalModel for LlamaCppModel {
     fn infer(&self, request: InferenceRequest) -> Result<InferenceResponse, ProviderError> {
         #[cfg(feature = "real-inference")]
         {
-            let backend = self
-                .backend
-                .as_ref()
-                .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
+            let backend = get_backend()?;
             let model = self
                 .model
                 .as_ref()
@@ -151,9 +159,14 @@ impl LocalModel for LlamaCppModel {
                 .map_err(|e| ProviderError::Model(format!("context creation failed: {e}")))?;
 
             // Process prompt tokens
+            if tokens.is_empty() {
+                return Err(ProviderError::Model(
+                    "tokenization produced no tokens".into(),
+                ));
+            }
             let mut batch = LlamaBatch::new(tokens.len() + request.max_tokens as usize + 1, 1);
             let last_index = (tokens.len() - 1) as i32;
-            for (i, token) in (0_i32..).zip(tokens.into_iter()) {
+            for (i, token) in (0_i32..).zip(tokens) {
                 batch
                     .add(token, i, &[0], i == last_index)
                     .map_err(|e| ProviderError::Model(format!("batch add failed: {e}")))?;
@@ -169,6 +182,7 @@ impl LocalModel for LlamaCppModel {
             let mut n_cur = batch.n_tokens();
             let mut decoder = encoding_rs::UTF_8.new_decoder();
 
+            #[allow(clippy::explicit_counter_loop)]
             for _ in 0..request.max_tokens {
                 let token = sampler.sample(&ctx, batch.n_tokens() - 1);
                 sampler.accept(token);
@@ -213,7 +227,6 @@ impl LocalModel for LlamaCppModel {
         #[cfg(feature = "real-inference")]
         {
             self.model = None;
-            self.backend = None;
         }
 
         #[cfg(not(feature = "real-inference"))]
@@ -242,6 +255,7 @@ impl LocalModel for LlamaCppModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
     use runtime::{CapabilityProvider, LocalProvider};
 
     fn default_config() -> ResolvedConfig {
@@ -298,6 +312,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(not(feature = "real-inference"))]
     #[test]
     fn infer_after_unload_returns_error() {
         let mut model = LlamaCppModel::new();
@@ -325,6 +340,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(not(feature = "real-inference"))]
     #[test]
     fn load_unload_load_unload_cycle() {
         let mut model = LlamaCppModel::new();
@@ -364,6 +380,7 @@ mod tests {
         assert!(model.model.is_none());
     }
 
+    #[cfg(not(feature = "real-inference"))]
     #[test]
     fn load_populates_info() {
         let mut model = LlamaCppModel::new();
@@ -426,6 +443,7 @@ mod tests {
         assert_eq!(provider.state(), contract::ProviderState::Uninitialized);
     }
 
+    #[cfg(not(feature = "real-inference"))]
     #[test]
     fn load_transitions_to_ready() {
         let model = LlamaCppModel::new();
@@ -435,6 +453,7 @@ mod tests {
         assert_eq!(provider.state(), contract::ProviderState::Ready);
     }
 
+    #[cfg(not(feature = "real-inference"))]
     #[test]
     fn unload_transitions_to_uninitialized() {
         let model = LlamaCppModel::new();
@@ -458,6 +477,7 @@ mod tests {
         assert_eq!(provider.state(), contract::ProviderState::Failed);
     }
 
+    #[cfg(not(feature = "real-inference"))]
     #[test]
     fn failed_can_retry_to_loading() {
         let model = LlamaCppModel::new();
@@ -479,6 +499,7 @@ mod tests {
         assert_eq!(provider.state(), contract::ProviderState::Ready);
     }
 
+    #[cfg(not(feature = "real-inference"))]
     #[test]
     fn health_reflects_state() {
         let model = LlamaCppModel::new();
@@ -585,7 +606,7 @@ mod integration {
             exit_code: 0,
             stdout: "Compiling project v0.1.0\nFinished dev [optimized] target(s)".into(),
             stderr: String::new(),
-            prompt: String::new(),
+            prompt: "Summarize the build output".into(),
             temperature: 0.1,
             max_tokens: 256,
         });
@@ -596,6 +617,106 @@ mod integration {
                 assert!(!resp.summary.is_empty());
             }
             _ => panic!("expected BuildSummary response"),
+        }
+    }
+
+    #[test]
+    fn build_summary_failure_explains_error() {
+        let mut model = LlamaCppModel::new();
+        let config = ResolvedConfig {
+            model_path: test_model_path(),
+            ..ResolvedConfig::default()
+        };
+        model.load(&config).unwrap();
+
+        let info = contract::ProviderInfo {
+            name: "llama.cpp".into(),
+            version: "0.1.0".into(),
+            supported_capabilities: vec![
+                contract::CapabilityKind::BuildSummary,
+                contract::CapabilityKind::ExplainRust,
+            ],
+        };
+        let mut provider = LocalProvider::new(model, config, info);
+        provider.load().unwrap();
+
+        let request = contract::CapabilityRequest::BuildSummary(contract::BuildSummaryRequest {
+            metadata: contract::RequestMetadata::new(),
+            command: "cargo build".into(),
+            exit_code: 1,
+            stdout: String::new(),
+            stderr: "error[E0599]: no method named `foo` found\n --> src/main.rs:5:10".into(),
+            prompt: "Summarize the build failure".into(),
+            temperature: 0.1,
+            max_tokens: 256,
+        });
+
+        let response = provider.execute(request).unwrap();
+        match response {
+            contract::CapabilityResponse::BuildSummary(resp) => {
+                assert!(!resp.summary.is_empty());
+                assert!(resp.summary.len() > 20);
+                let lower = resp.summary.to_lowercase();
+                assert!(
+                    lower.contains("error")
+                        || lower.contains("fail")
+                        || lower.contains("issue")
+                        || lower.contains("problem"),
+                    "summary should mention error/fail/issue/problem: {}",
+                    resp.summary
+                );
+            }
+            _ => panic!("expected BuildSummary response"),
+        }
+    }
+
+    #[test]
+    fn explain_rust_describes_code() {
+        let mut model = LlamaCppModel::new();
+        let config = ResolvedConfig {
+            model_path: test_model_path(),
+            ..ResolvedConfig::default()
+        };
+        model.load(&config).unwrap();
+
+        let info = contract::ProviderInfo {
+            name: "llama.cpp".into(),
+            version: "0.1.0".into(),
+            supported_capabilities: vec![
+                contract::CapabilityKind::BuildSummary,
+                contract::CapabilityKind::ExplainRust,
+            ],
+        };
+        let mut provider = LocalProvider::new(model, config, info);
+        provider.load().unwrap();
+
+        let source = "fn main() {\n    let x = String::from(\"hello\");\n    let y = x;\n    println!(\"{}\", y);\n}";
+        let request = contract::CapabilityRequest::ExplainRust(contract::ExplainRustRequest {
+            metadata: contract::RequestMetadata::new(),
+            source: source.into(),
+            question: "What happens to x?".into(),
+            prompt: format!("Explain this Rust code:\n{}", source),
+            temperature: 0.1,
+            max_tokens: 256,
+        });
+
+        let response = provider.execute(request).unwrap();
+        match response {
+            contract::CapabilityResponse::BuildSummary(resp) => {
+                assert!(!resp.summary.is_empty());
+                assert!(resp.summary.len() > 20);
+                let lower = resp.summary.to_lowercase();
+                assert!(
+                    lower.contains("owner")
+                        || lower.contains("move")
+                        || lower.contains("borrow")
+                        || lower.contains("clone")
+                        || lower.contains("string"),
+                    "explanation should mention ownership concepts: {}",
+                    resp.summary
+                );
+            }
+            _ => panic!("expected BuildSummary response (adapter wraps all responses)"),
         }
     }
 }
