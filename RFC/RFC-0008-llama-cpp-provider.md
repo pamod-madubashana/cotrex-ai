@@ -1,6 +1,6 @@
 # RFC-0008: llama.cpp Provider
 
-**Status:** Accepted
+**Status:** Implemented
 **Milestone:** 12
 **Depends on:** RFC-0007 (Local Provider Runtime)
 

@@ -162,10 +162,8 @@ impl LocalModel for LlamaCppModel {
                 .map_err(|e| ProviderError::Model(format!("decode failed: {e}")))?;
 
             // Generate tokens
-            let mut sampler = LlamaSampler::chain_simple([
-                LlamaSampler::dist(1234),
-                LlamaSampler::greedy(),
-            ]);
+            let mut sampler =
+                LlamaSampler::chain_simple([LlamaSampler::dist(1234), LlamaSampler::greedy()]);
 
             let mut output = String::new();
             let mut n_cur = batch.n_tokens();
@@ -581,18 +579,16 @@ mod integration {
         let mut provider = LocalProvider::new(model, config, info);
         provider.load().unwrap();
 
-        let request = contract::CapabilityRequest::BuildSummary(
-            contract::BuildSummaryRequest {
-                metadata: contract::RequestMetadata::new(),
-                command: "cargo build".into(),
-                exit_code: 0,
-                stdout: "Compiling project v0.1.0\nFinished dev [optimized] target(s)".into(),
-                stderr: String::new(),
-                prompt: String::new(),
-                temperature: 0.1,
-                max_tokens: 256,
-            },
-        );
+        let request = contract::CapabilityRequest::BuildSummary(contract::BuildSummaryRequest {
+            metadata: contract::RequestMetadata::new(),
+            command: "cargo build".into(),
+            exit_code: 0,
+            stdout: "Compiling project v0.1.0\nFinished dev [optimized] target(s)".into(),
+            stderr: String::new(),
+            prompt: String::new(),
+            temperature: 0.1,
+            max_tokens: 256,
+        });
 
         let response = provider.execute(request).unwrap();
         match response {
