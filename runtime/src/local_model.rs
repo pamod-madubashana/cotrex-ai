@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use crate::ProviderError;
 use crate::config::ResolvedConfig;
 
@@ -59,7 +61,7 @@ impl Prompt {
 // Typed structures for inference. Parameters evolve without trait changes.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct InferenceRequest {
     /// Raw prompt text (fallback when messages is empty).
     pub prompt: Prompt,
@@ -68,6 +70,22 @@ pub struct InferenceRequest {
     pub messages: Vec<ChatMessage>,
     pub temperature: f32,
     pub max_tokens: u32,
+    /// Optional token-by-token callback. When set, the provider sends each
+    /// generated text piece through this callback before accumulating.
+    /// Used by the UI layer for real-time streaming in User mode.
+    pub token_callback: Option<Arc<Mutex<dyn FnMut(&str) + Send + 'static>>>,
+}
+
+impl std::fmt::Debug for InferenceRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InferenceRequest")
+            .field("prompt", &self.prompt)
+            .field("messages", &self.messages)
+            .field("temperature", &self.temperature)
+            .field("max_tokens", &self.max_tokens)
+            .field("token_callback", &self.token_callback.as_ref().map(|_| "<callback>"))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +154,7 @@ mod tests {
             messages: vec![],
             temperature: 0.5,
             max_tokens: 100,
+            token_callback: None,
         };
         assert_eq!(req.prompt.text, "test");
         assert_eq!(req.temperature, 0.5);

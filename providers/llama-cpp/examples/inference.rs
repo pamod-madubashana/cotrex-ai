@@ -41,6 +41,7 @@ fn main() {
         messages: vec![],
         temperature: 0.1,
         max_tokens: 128,
+        token_callback: None,
     };
 
     eprintln!("Response:");

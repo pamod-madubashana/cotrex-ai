@@ -27,6 +27,7 @@ pub fn execute_capability<M: LocalModel>(
         messages: vec![],
         temperature: runtime_req.temperature,
         max_tokens: runtime_req.max_tokens,
+        token_callback: None,
     })?;
     let model_output = output_parser.parse(&inference_resp);
     Ok(capability_parser.parse(&model_output, &request))

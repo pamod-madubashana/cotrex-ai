@@ -96,6 +96,7 @@ impl<M: LocalModel> CapabilityProvider for LocalProvider<M> {
             messages: vec![],
             temperature: runtime_req.temperature,
             max_tokens: runtime_req.max_tokens,
+            token_callback: None,
         })?;
         adapt_response(inference_resp)
     }
@@ -396,6 +397,7 @@ mod tests {
             messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
+            token_callback: None,
         };
 
         let resp1 = provider.model.infer(req.clone()).unwrap();
@@ -416,6 +418,7 @@ mod tests {
             messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
+            token_callback: None,
         };
 
         // Both calls should succeed using the same model

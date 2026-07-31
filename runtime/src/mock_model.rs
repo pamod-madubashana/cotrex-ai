@@ -78,6 +78,7 @@ mod tests {
             messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
+            token_callback: None,
         };
         let resp = model.infer(req).unwrap();
         assert_eq!(resp.text, "mock: test prompt");

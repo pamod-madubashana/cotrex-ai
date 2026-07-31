@@ -233,6 +233,14 @@ impl LocalModel for LlamaCppModel {
                 let text = model
                     .token_to_piece(token, &mut decoder, true, None)
                     .map_err(|e| ProviderError::Model(format!("token decode failed: {e}")))?;
+
+                // Stream token to callback if present
+                if let Some(ref cb) = request.token_callback {
+                    if let Ok(mut f) = cb.lock() {
+                        f(&text);
+                    }
+                }
+
                 output.push_str(&text);
 
                 batch.clear();
@@ -347,6 +355,7 @@ mod tests {
             messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
+            token_callback: None,
         };
         let result = model.infer(request);
         assert!(result.is_err());
@@ -376,6 +385,7 @@ mod tests {
             messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
+            token_callback: None,
         };
         let result = model.infer(request);
         assert!(result.is_err());
@@ -677,6 +687,7 @@ mod integration {
             messages: vec![],
             temperature: 0.0,
             max_tokens: 16,
+            token_callback: None,
         };
         let response = model.infer(request).unwrap();
         assert!(!response.text.is_empty());
@@ -842,6 +853,7 @@ mod integration {
             messages: vec![],
             temperature: 0.1,
             max_tokens: 512,
+            token_callback: None,
         };
 
         let result = model.infer(request);
@@ -885,6 +897,7 @@ mod integration {
             messages: vec![],
             temperature: 0.1,
             max_tokens: 16,
+            token_callback: None,
         };
         let result = model.infer(request);
         assert!(result.is_err());
