@@ -8,9 +8,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/built_with-Rust-orange.svg" alt="Built with Rust">
-  <img src="https://img.shields.io/badge/version-0.8.0-blue.svg" alt="Version 0.8.0">
-  <img src="https://img.shields.io/badge/edition-2024-purple.svg" alt="Rust 2024">
-  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License">
+  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version 1.0.0">
+  <img src="https://img.shields.io/badge/edition-2021-purple.svg" alt="Rust 2021">
 </p>
 
 <p align="center">
@@ -24,7 +23,7 @@
 
 ## What is Cotrex AI
 
-Cotrex AI Runtime (`cotrex-ai`) is the AI execution layer for the Cotrex agent OS. It abstracts inference providers behind a stable, typed protocol and provides an orchestration pipeline that turns capability requests into model inference.
+cotrex-ai/ is the AI execution layer for the Cotrex agent OS. It abstracts inference providers behind a stable, typed protocol and provides an orchestration pipeline that turns capability requests into model inference.
 
 - **What it does**: Provides AI inference and orchestration to the Cotrex kernel
 - **Why it's useful**: Models are replaceable, the protocol is not
@@ -76,8 +75,9 @@ cotrex-ai/
 ├── runtime/         # Orchestration pipeline, ContextSource trait, provider abstraction
 ├── kernel/          # Event Store, projections, observation pipeline
 ├── execution/       # Execution engine, registry, and built-in executors
+├── capabilities/    # Capability definitions
 ├── providers/
-│   ├── llama-cpp/   # llama.cpp FFI provider (optional)
+│   ├── llama-cpp/   # llama.cpp FFI provider (optional, behind local-model feature)
 │   ├── mock/        # Deterministic mock responses
 │   └── json/        # JSON fixture provider
 ├── examples/        # Usage examples
@@ -92,7 +92,7 @@ cotrex-ai/
 
 ### Prerequisites
 
-- Rust 2024 edition
+- Rust 2021 edition
 - CMake (for llama.cpp compilation)
 
 ### Build
@@ -180,6 +180,10 @@ cargo clippy --workspace -- -D warnings
 | G | Provider Abstraction — lazy loading, factory trait | ✅ Complete |
 | H | Intelligence Orchestration — orchestrator pipeline, MCP migration | ✅ Complete |
 | I | Workspace Intelligence — ContextSource, kernel bridge | ✅ Complete |
+| J | Tool Execution Loop — built-in tools, permission model, demo mode | ✅ Complete |
+| K | System Management — init, doctor, version commands | ✅ Complete |
+| L | Packaging — cross-platform release archives | ✅ Complete |
+| M | Distribution — GitHub Releases with quality gates | ✅ Complete |
 
 ---
 
@@ -207,6 +211,8 @@ cargo clippy --workspace -- -D warnings
 | [RFC-0006](RFC/RFC-0006-persistent-event-store.md) | Persistent Event Store | Implemented |
 | [RFC-0007](RFC/RFC-0007-local-provider-runtime.md) | Local Provider Runtime | Implemented |
 | [RFC-0008](RFC/RFC-0008-llama-cpp-provider.md) | llama.cpp Provider | Implemented |
+| [RFC-0009](RFC/RFC-0009-inference-pipeline.md) | Inference Pipeline | Implemented |
+| [RFC-0010](RFC/RFC-0010-model-output-contract.md) | Model Output Contract | Implemented |
 
 ---
 
