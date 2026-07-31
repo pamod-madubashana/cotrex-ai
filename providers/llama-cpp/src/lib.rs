@@ -12,7 +12,7 @@ use llama_cpp_2::llama_batch::LlamaBatch;
 #[cfg(feature = "real-inference")]
 use llama_cpp_2::model::params::LlamaModelParams;
 #[cfg(feature = "real-inference")]
-use llama_cpp_2::model::{AddBos, LlamaModel};
+use llama_cpp_2::model::{AddBos, LlamaChatMessage, LlamaModel};
 #[cfg(feature = "real-inference")]
 use llama_cpp_2::sampling::LlamaSampler;
 #[cfg(feature = "real-inference")]
@@ -145,9 +145,34 @@ impl LocalModel for LlamaCppModel {
                 .as_ref()
                 .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
 
-            // Tokenize prompt
+            // Apply chat template if structured messages are provided.
+            // This is critical: Qwen2.5 (and most instruct models) expect
+            // ChatML-formatted input with <|im_start|>role markers.
+            let prompt_text = if !request.messages.is_empty() {
+                let tmpl = model
+                    .chat_template(None)
+                    .map_err(|e| ProviderError::Model(format!("chat template unavailable: {e}")))?;
+
+                let chat_messages: Vec<LlamaChatMessage> = request
+                    .messages
+                    .iter()
+                    .map(|m| {
+                        LlamaChatMessage::new(m.role.clone(), m.content.clone())
+                            .map_err(|e| ProviderError::Model(format!("chat message error: {e}")))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                model
+                    .apply_chat_template(&tmpl, &chat_messages, true)
+                    .map_err(|e| ProviderError::Model(format!("template apply failed: {e}")))?
+            } else {
+                // Fallback: raw prompt text (backward compatibility)
+                request.prompt.text.clone()
+            };
+
+            // Tokenize the (possibly template-rendered) prompt
             let tokens = model
-                .str_to_token(&request.prompt.text, AddBos::Always)
+                .str_to_token(&prompt_text, AddBos::Always)
                 .map_err(|e| ProviderError::Model(format!("tokenization failed: {e}")))?;
 
             // Guard against prompts exceeding context window.
@@ -319,6 +344,7 @@ mod tests {
         let model = LlamaCppModel::new();
         let request = InferenceRequest {
             prompt: runtime::Prompt::new("test"),
+            messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
         };
@@ -347,6 +373,7 @@ mod tests {
 
         let request = InferenceRequest {
             prompt: runtime::Prompt::new("test"),
+            messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
         };
@@ -549,6 +576,7 @@ mod tests {
 #[cfg(all(test, feature = "real-inference"))]
 mod integration {
     use super::*;
+    use llama_cpp_2::model::LlamaChatMessage;
     use runtime::{CapabilityProvider, LocalProvider};
     use std::path::PathBuf;
 
@@ -556,6 +584,69 @@ mod integration {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("fixtures")
             .join("qwen2.5-0.5b-instruct-q4_k_m.gguf")
+    }
+
+    fn installed_model_path() -> PathBuf {
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        PathBuf::from(home)
+            .join(".cotrex")
+            .join("models")
+            .join("qwen2.5-1.5b-instruct-q4_k_m.gguf")
+    }
+
+    #[test]
+    fn dump_gguf_chat_template() {
+        let path = installed_model_path();
+        if !path.exists() {
+            eprintln!("Model not found at {}, skipping", path.display());
+            return;
+        }
+        let backend = get_backend().unwrap();
+        let model = LlamaModel::load_from_file(backend, &path, &LlamaModelParams::default())
+            .expect("model load failed");
+
+        // Try canonical chat_template API
+        match model.chat_template(None) {
+            Ok(tmpl) => {
+                let s = tmpl.to_str().unwrap_or("(utf8 error)");
+                eprintln!("=== GGUF CHAT TEMPLATE (len={}) ===", s.len());
+                eprintln!("{}", s);
+                eprintln!("=== END CHAT TEMPLATE ===");
+            }
+            Err(e) => {
+                eprintln!("chat_template(None) failed: {:?}", e);
+            }
+        }
+
+        // Also try raw metadata
+        match model.meta_val_str("tokenizer.chat_template") {
+            Ok(val) => {
+                eprintln!("=== RAW tokenizer.chat_template (len={}) ===", val.len());
+                eprintln!("{}", val);
+                eprintln!("=== END RAW ===");
+            }
+            Err(e) => {
+                eprintln!("meta_val_str failed: {:?}", e);
+            }
+        }
+
+        // Test apply_chat_template
+        let tmpl = model.chat_template(None).expect("need template");
+        let messages = vec![
+            LlamaChatMessage::new("system".into(), "You are a helpful assistant.".into()).unwrap(),
+            LlamaChatMessage::new("user".into(), "hello".into()).unwrap(),
+        ];
+        match model.apply_chat_template(&tmpl, &messages, true) {
+            Ok(rendered) => {
+                eprintln!(
+                    "=== APPLIED TEMPLATE ===\n{}\n=== END APPLIED ===",
+                    rendered
+                );
+            }
+            Err(e) => {
+                eprintln!("apply_chat_template failed: {:?}", e);
+            }
+        }
     }
 
     #[test]
@@ -583,6 +674,7 @@ mod integration {
 
         let request = InferenceRequest {
             prompt: runtime::Prompt::new("What is 2 + 2? Answer with just the number."),
+            messages: vec![],
             temperature: 0.0,
             max_tokens: 16,
         };
@@ -747,6 +839,7 @@ mod integration {
         let huge_prompt = "word ".repeat(10000);
         let request = InferenceRequest {
             prompt: runtime::Prompt::new(&huge_prompt),
+            messages: vec![],
             temperature: 0.1,
             max_tokens: 512,
         };
@@ -789,6 +882,7 @@ mod integration {
         // Verify inference fails after unload
         let request = InferenceRequest {
             prompt: runtime::Prompt::new("test"),
+            messages: vec![],
             temperature: 0.1,
             max_tokens: 16,
         };

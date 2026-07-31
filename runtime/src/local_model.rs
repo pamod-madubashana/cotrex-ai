@@ -2,6 +2,40 @@ use crate::ProviderError;
 use crate::config::ResolvedConfig;
 
 // ---------------------------------------------------------------------------
+// Chat message
+//
+// A role/content pair for structured chat prompts. Provider-agnostic:
+// the provider converts these to whatever template format the model expects.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+impl ChatMessage {
+    pub fn system(content: impl Into<String>) -> Self {
+        Self {
+            role: "system".into(),
+            content: content.into(),
+        }
+    }
+    pub fn user(content: impl Into<String>) -> Self {
+        Self {
+            role: "user".into(),
+            content: content.into(),
+        }
+    }
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Self {
+            role: "assistant".into(),
+            content: content.into(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Prompt
 //
 // Wrapper for prompt text. Exists so it can evolve into structured context
@@ -27,7 +61,11 @@ impl Prompt {
 
 #[derive(Debug, Clone)]
 pub struct InferenceRequest {
+    /// Raw prompt text (fallback when messages is empty).
     pub prompt: Prompt,
+    /// Structured chat messages. If non-empty, the provider should apply
+    /// the model's chat template (e.g. ChatML) instead of using raw text.
+    pub messages: Vec<ChatMessage>,
     pub temperature: f32,
     pub max_tokens: u32,
 }
@@ -95,6 +133,7 @@ mod tests {
     fn inference_request建造() {
         let req = InferenceRequest {
             prompt: Prompt::new("test"),
+            messages: vec![],
             temperature: 0.5,
             max_tokens: 100,
         };

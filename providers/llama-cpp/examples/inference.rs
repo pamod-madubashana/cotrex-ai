@@ -38,6 +38,7 @@ fn main() {
 
     let request = InferenceRequest {
         prompt: Prompt::new(prompt),
+        messages: vec![],
         temperature: 0.1,
         max_tokens: 128,
     };

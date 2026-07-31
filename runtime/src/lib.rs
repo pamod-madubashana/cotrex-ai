@@ -29,7 +29,9 @@ pub use context::{ContextSource, InferenceContext, NullContextSource, WorkspaceS
 pub use factory::ProviderFactory;
 pub use lazy_provider::LazyProvider;
 pub use lifecycle::ProviderLifecycle;
-pub use local_model::{InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt};
+pub use local_model::{
+    ChatMessage, InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt,
+};
 pub use local_provider::LocalProvider;
 pub use mock_model::MockLocalModel;
 pub use model_manager::ModelManagerError;

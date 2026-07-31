@@ -24,6 +24,7 @@ pub fn execute_capability<M: LocalModel>(
     let runtime_req = adapt_request(request.clone())?;
     let inference_resp = model.infer(InferenceRequest {
         prompt: runtime_req.prompt,
+        messages: vec![],
         temperature: runtime_req.temperature,
         max_tokens: runtime_req.max_tokens,
     })?;

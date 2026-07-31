@@ -9,3 +9,11 @@ url = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2
 sha256 = "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
 size = 491400032
 context = 32768
+
+[[models]]
+id = "qwen2.5-1.5b"
+filename = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+url = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+sha256 = "985e87a8d6c7c1c4a5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b"
+size = 1117320736
+context = 32768

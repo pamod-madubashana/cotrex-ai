@@ -75,6 +75,7 @@ mod tests {
         let model = MockLocalModel::new();
         let req = InferenceRequest {
             prompt: crate::Prompt::new("test prompt"),
+            messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
         };

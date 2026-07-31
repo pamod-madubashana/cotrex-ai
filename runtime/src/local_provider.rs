@@ -93,6 +93,7 @@ impl<M: LocalModel> CapabilityProvider for LocalProvider<M> {
         let runtime_req = adapt_request(request)?;
         let inference_resp = self.model.infer(crate::InferenceRequest {
             prompt: runtime_req.prompt,
+            messages: vec![],
             temperature: runtime_req.temperature,
             max_tokens: runtime_req.max_tokens,
         })?;
@@ -392,6 +393,7 @@ mod tests {
         // Multiple inferences should use the same model instance
         let req = crate::InferenceRequest {
             prompt: crate::Prompt::new("test"),
+            messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
         };
@@ -411,6 +413,7 @@ mod tests {
 
         let req = crate::InferenceRequest {
             prompt: crate::Prompt::new("test"),
+            messages: vec![],
             temperature: 0.1,
             max_tokens: 100,
         };
