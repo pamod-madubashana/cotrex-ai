@@ -61,6 +61,7 @@ mod tests {
         fn infer(&self, _req: InferenceRequest) -> Result<InferenceResponse, ProviderError> {
             Ok(InferenceResponse {
                 text: self.output.clone(),
+                profile: None,
             })
         }
 

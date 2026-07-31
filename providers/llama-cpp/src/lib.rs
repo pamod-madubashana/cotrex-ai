@@ -1,7 +1,9 @@
 use runtime::{
-    InferenceRequest, InferenceResponse, LocalModel, ModelInfo, ProviderError, ResolvedConfig,
+    InferProfile, InferenceRequest, InferenceResponse, LocalModel, ModelInfo, ProviderError,
+    ResolvedConfig,
 };
 use std::path::PathBuf;
+use std::time::Instant;
 
 #[cfg(feature = "real-inference")]
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -135,6 +137,11 @@ impl LocalModel for LlamaCppModel {
     fn infer(&self, request: InferenceRequest) -> Result<InferenceResponse, ProviderError> {
         #[cfg(feature = "real-inference")]
         {
+            let profiling = std::env::var("COTREX_PROFILE")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            let total_start = Instant::now();
+
             let backend = get_backend()?;
             let model = self
                 .model
@@ -145,9 +152,8 @@ impl LocalModel for LlamaCppModel {
                 .as_ref()
                 .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
 
-            // Apply chat template if structured messages are provided.
-            // This is critical: Qwen2.5 (and most instruct models) expect
-            // ChatML-formatted input with <|im_start|>role markers.
+            // Phase 1: Apply chat template
+            let phase_start = Instant::now();
             let prompt_text = if !request.messages.is_empty() {
                 let tmpl = model
                     .chat_template(None)
@@ -166,18 +172,19 @@ impl LocalModel for LlamaCppModel {
                     .apply_chat_template(&tmpl, &chat_messages, true)
                     .map_err(|e| ProviderError::Model(format!("template apply failed: {e}")))?
             } else {
-                // Fallback: raw prompt text (backward compatibility)
                 request.prompt.text.clone()
             };
+            let chat_template_dur = phase_start.elapsed();
 
-            // Tokenize the (possibly template-rendered) prompt
+            // Phase 2: Tokenize
+            let phase_start = Instant::now();
             let tokens = model
                 .str_to_token(&prompt_text, AddBos::Always)
                 .map_err(|e| ProviderError::Model(format!("tokenization failed: {e}")))?;
+            let tokenize_dur = phase_start.elapsed();
+            let prompt_tokens = tokens.len();
 
             // Guard against prompts exceeding context window.
-            // Reserve space for generated tokens — never panic, always return a
-            // structured error so callers can handle gracefully.
             let reserved = request.max_tokens as usize;
             let available = loaded.context as usize;
             if tokens.len() + reserved > available {
@@ -189,20 +196,23 @@ impl LocalModel for LlamaCppModel {
                 )));
             }
 
-            // Create context
+            // Phase 3: Create context
+            let phase_start = Instant::now();
             let ctx_params = LlamaContextParams::default()
                 .with_n_ctx(NonZeroU32::new(loaded.context))
                 .with_n_threads(loaded.threads as i32);
             let mut ctx = model
                 .new_context(backend, ctx_params)
                 .map_err(|e| ProviderError::Model(format!("context creation failed: {e}")))?;
+            let new_context_dur = phase_start.elapsed();
 
-            // Process prompt tokens
+            // Phase 4: Process prompt tokens
             if tokens.is_empty() {
                 return Err(ProviderError::Model(
                     "tokenization produced no tokens".into(),
                 ));
             }
+            let phase_start = Instant::now();
             let mut batch = LlamaBatch::new(tokens.len() + request.max_tokens as usize + 1, 1);
             let last_index = (tokens.len() - 1) as i32;
             for (i, token) in (0_i32..).zip(tokens) {
@@ -212,14 +222,17 @@ impl LocalModel for LlamaCppModel {
             }
             ctx.decode(&mut batch)
                 .map_err(|e| ProviderError::Model(format!("decode failed: {e}")))?;
+            let prompt_decode_dur = phase_start.elapsed();
 
-            // Generate tokens
+            // Phase 5: Generate tokens
+            let phase_start = Instant::now();
             let mut sampler =
                 LlamaSampler::chain_simple([LlamaSampler::dist(1234), LlamaSampler::greedy()]);
 
             let mut output = String::new();
             let mut n_cur = batch.n_tokens();
             let mut decoder = encoding_rs::UTF_8.new_decoder();
+            let mut generated_tokens: usize = 0;
 
             #[allow(clippy::explicit_counter_loop)]
             for _ in 0..request.max_tokens {
@@ -242,6 +255,7 @@ impl LocalModel for LlamaCppModel {
                 }
 
                 output.push_str(&text);
+                generated_tokens += 1;
 
                 batch.clear();
                 batch
@@ -252,8 +266,26 @@ impl LocalModel for LlamaCppModel {
 
                 n_cur += 1;
             }
+            let generation_dur = phase_start.elapsed();
 
-            Ok(InferenceResponse { text: output })
+            let total_dur = total_start.elapsed();
+
+            let profile = if profiling {
+                Some(InferProfile {
+                    chat_template: chat_template_dur,
+                    tokenize: tokenize_dur,
+                    new_context: new_context_dur,
+                    prompt_decode: prompt_decode_dur,
+                    generation: generation_dur,
+                    total: total_dur,
+                    prompt_tokens,
+                    generated_tokens,
+                })
+            } else {
+                None
+            };
+
+            Ok(InferenceResponse { text: output, profile })
         }
 
         #[cfg(not(feature = "real-inference"))]
@@ -266,7 +298,10 @@ impl LocalModel for LlamaCppModel {
                 .as_ref()
                 .ok_or_else(|| ProviderError::Model("model not loaded".into()))?;
             let output = format!("llama.cpp: {}", request.prompt.text);
-            Ok(InferenceResponse { text: output })
+            Ok(InferenceResponse {
+                text: output,
+                profile: None,
+            })
         }
     }
 

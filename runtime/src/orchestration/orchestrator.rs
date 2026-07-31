@@ -56,7 +56,7 @@ impl Orchestrator {
         let raw = extract_raw_text(&response);
         let model_output = self
             .output_parser
-            .parse(&InferenceResponse { text: raw.clone() });
+            .parse(&InferenceResponse { text: raw.clone(), profile: None });
 
         let capability = self.capability_parser.parse(&model_output, &original);
 

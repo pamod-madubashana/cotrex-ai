@@ -43,6 +43,7 @@ impl LocalModel for MockLocalModel {
     fn infer(&self, request: InferenceRequest) -> Result<InferenceResponse, ProviderError> {
         Ok(InferenceResponse {
             text: format!("mock: {}", request.prompt.text),
+            profile: None,
         })
     }
 

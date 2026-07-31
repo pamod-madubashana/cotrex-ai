@@ -111,6 +111,7 @@ mod tests {
         let parser = DefaultOutputParser;
         let response = InferenceResponse {
             text: r#"{"success": true, "summary": "ok"}"#.into(),
+            profile: None,
         };
         let output = parser.parse(&response);
         assert_eq!(output.raw, response.text);
@@ -123,6 +124,7 @@ mod tests {
         let parser = DefaultOutputParser;
         let response = InferenceResponse {
             text: "```json\n{\"success\": true}\n```".into(),
+            profile: None,
         };
         let output = parser.parse(&response);
         assert!(matches!(output.format, OutputFormat::Json(_)));
@@ -133,6 +135,7 @@ mod tests {
         let parser = DefaultOutputParser;
         let response = InferenceResponse {
             text: "Here is the result:\n{\"success\": true}\nHope this helps!".into(),
+            profile: None,
         };
         let output = parser.parse(&response);
         assert!(matches!(output.format, OutputFormat::Json(_)));
@@ -143,6 +146,7 @@ mod tests {
         let parser = DefaultOutputParser;
         let response = InferenceResponse {
             text: "The build failed because of a missing dependency.".into(),
+            profile: None,
         };
         let output = parser.parse(&response);
         assert!(matches!(output.format, OutputFormat::Text(_)));
@@ -154,6 +158,7 @@ mod tests {
         let parser = DefaultOutputParser;
         let response = InferenceResponse {
             text: String::new(),
+            profile: None,
         };
         let output = parser.parse(&response);
         assert_eq!(output.format, OutputFormat::Empty);
@@ -164,6 +169,7 @@ mod tests {
         let parser = DefaultOutputParser;
         let response = InferenceResponse {
             text: "   \n  \t  ".into(),
+            profile: None,
         };
         let output = parser.parse(&response);
         assert_eq!(output.format, OutputFormat::Empty);
@@ -175,6 +181,7 @@ mod tests {
         let original = "  ```json\n{\"a\": 1}\n```  ";
         let response = InferenceResponse {
             text: original.into(),
+            profile: None,
         };
         let output = parser.parse(&response);
         assert_eq!(output.raw, original);
@@ -185,6 +192,7 @@ mod tests {
         let parser = DefaultOutputParser;
         let response = InferenceResponse {
             text: "something { incomplete".into(),
+            profile: None,
         };
         let output = parser.parse(&response);
         assert!(!output.warnings.is_empty());
@@ -195,6 +203,7 @@ mod tests {
         let parser = DefaultOutputParser;
         let response = InferenceResponse {
             text: r#"{"a": 1} {"b": 2}"#.into(),
+            profile: None,
         };
         let output = parser.parse(&response);
         match output.format {

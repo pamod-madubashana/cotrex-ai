@@ -311,7 +311,7 @@ mod tests {
                 &self,
                 _req: crate::InferenceRequest,
             ) -> Result<crate::InferenceResponse, crate::ProviderError> {
-                Ok(crate::InferenceResponse { text: "ok".into() })
+                Ok(crate::InferenceResponse { text: "ok".into(), profile: None })
             }
             fn unload(&mut self) -> Result<(), crate::ProviderError> {
                 Ok(())
@@ -373,6 +373,7 @@ mod tests {
             ) -> Result<crate::InferenceResponse, crate::ProviderError> {
                 Ok(crate::InferenceResponse {
                     text: format!("model-{}", self.instance_id),
+                    profile: None,
                 })
             }
             fn unload(&mut self) -> Result<(), crate::ProviderError> {
@@ -451,7 +452,7 @@ mod tests {
                 _req: crate::InferenceRequest,
             ) -> Result<crate::InferenceResponse, crate::ProviderError> {
                 self.infer_count.fetch_add(1, Ordering::SeqCst);
-                Ok(crate::InferenceResponse { text: "ok".into() })
+                Ok(crate::InferenceResponse { text: "ok".into(), profile: None })
             }
             fn unload(&mut self) -> Result<(), crate::ProviderError> {
                 Ok(())

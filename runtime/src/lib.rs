@@ -30,7 +30,7 @@ pub use factory::ProviderFactory;
 pub use lazy_provider::LazyProvider;
 pub use lifecycle::ProviderLifecycle;
 pub use local_model::{
-    ChatMessage, InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt,
+    ChatMessage, InferProfile, InferenceRequest, InferenceResponse, LocalModel, ModelInfo, Prompt,
 };
 pub use local_provider::LocalProvider;
 pub use mock_model::MockLocalModel;

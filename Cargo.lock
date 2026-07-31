@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "execution",
  "kernel",
@@ -83,7 +83,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "capabilities"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "contract",
  "runtime",
@@ -139,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "contract"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "example-runner"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "contract",
  "mock",
@@ -247,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "execution"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "kernel",
  "tempfile",
@@ -424,7 +424,7 @@ dependencies = [
 
 [[package]]
 name = "json-provider"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "contract",
  "runtime",
@@ -434,7 +434,7 @@ dependencies = [
 
 [[package]]
 name = "kernel"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -481,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "llama-cpp-provider"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "contract",
  "encoding_rs",
@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "mock"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "contract",
  "runtime",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "runtime"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "contract",
  "hex",

@@ -98,6 +98,7 @@ mod tests {
     fn adapt_response_to_capability() {
         let response = InferenceResponse {
             text: "test output".into(),
+            profile: None,
         };
         let capability_resp = adapt_response(response).unwrap();
         match capability_resp {

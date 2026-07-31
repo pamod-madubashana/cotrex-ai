@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::ProviderError;
 use crate::config::ResolvedConfig;
@@ -91,6 +92,56 @@ impl std::fmt::Debug for InferenceRequest {
 #[derive(Debug, Clone)]
 pub struct InferenceResponse {
     pub text: String,
+    /// Optional per-phase profiling data. Populated by the provider when
+    /// profiling is enabled; `None` in normal operation.
+    pub profile: Option<InferProfile>,
+}
+
+/// Fine-grained timing for each phase of a single inference call.
+/// The provider populates this during `infer()` so callers can see
+/// exactly where time is spent.
+#[derive(Debug, Clone, Default)]
+pub struct InferProfile {
+    pub chat_template: Duration,
+    pub tokenize: Duration,
+    pub new_context: Duration,
+    pub prompt_decode: Duration,
+    pub generation: Duration,
+    pub total: Duration,
+    pub prompt_tokens: usize,
+    pub generated_tokens: usize,
+}
+
+impl InferProfile {
+    /// Tokens per second for prompt processing.
+    pub fn prompt_tok_s(&self) -> f64 {
+        let secs = self.prompt_decode.as_secs_f64();
+        if secs > 0.0 { self.prompt_tokens as f64 / secs } else { 0.0 }
+    }
+
+    /// Tokens per second for generation.
+    pub fn gen_tok_s(&self) -> f64 {
+        let secs = self.generation.as_secs_f64();
+        if secs > 0.0 { self.generated_tokens as f64 / secs } else { 0.0 }
+    }
+
+    /// Print a human-readable breakdown to stderr.
+    pub fn print(&self) {
+        eprintln!("  ┌─ Inference Profile ─────────────────────────┐");
+        eprintln!("  │ chat_template  {:>8.1} ms", self.chat_template.as_secs_f64() * 1000.0);
+        eprintln!("  │ tokenize       {:>8.1} ms", self.tokenize.as_secs_f64() * 1000.0);
+        eprintln!("  │ new_context    {:>8.1} ms", self.new_context.as_secs_f64() * 1000.0);
+        eprintln!("  │ prompt_decode  {:>8.1} ms  ({} tok, {:.0} tok/s)",
+            self.prompt_decode.as_secs_f64() * 1000.0,
+            self.prompt_tokens,
+            self.prompt_tok_s());
+        eprintln!("  │ generation     {:>8.1} ms  ({} tok, {:.1} tok/s)",
+            self.generation.as_secs_f64() * 1000.0,
+            self.generated_tokens,
+            self.gen_tok_s());
+        eprintln!("  │ total          {:>8.1} ms", self.total.as_secs_f64() * 1000.0);
+        eprintln!("  └────────────────────────────────────────────┘");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +216,7 @@ mod tests {
     fn inference_response建造() {
         let resp = InferenceResponse {
             text: "result".into(),
+            profile: None,
         };
         assert_eq!(resp.text, "result");
     }
