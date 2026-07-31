@@ -150,6 +150,20 @@ impl LocalModel for LlamaCppModel {
                 .str_to_token(&request.prompt.text, AddBos::Always)
                 .map_err(|e| ProviderError::Model(format!("tokenization failed: {e}")))?;
 
+            // Guard against prompts exceeding context window.
+            // Reserve space for generated tokens — never panic, always return a
+            // structured error so callers can handle gracefully.
+            let reserved = request.max_tokens as usize;
+            let available = loaded.context as usize;
+            if tokens.len() + reserved > available {
+                return Err(ProviderError::Model(format!(
+                    "prompt too large: {} tokens + {} max_tokens exceeds context window of {}",
+                    tokens.len(),
+                    reserved,
+                    available
+                )));
+            }
+
             // Create context
             let ctx_params = LlamaContextParams::default()
                 .with_n_ctx(NonZeroU32::new(loaded.context))
@@ -718,5 +732,67 @@ mod integration {
             }
             _ => panic!("expected BuildSummary response (adapter wraps all responses)"),
         }
+    }
+
+    #[test]
+    fn large_prompt_returns_structured_error() {
+        let mut model = LlamaCppModel::new();
+        let config = ResolvedConfig {
+            model_path: test_model_path(),
+            ..ResolvedConfig::default()
+        };
+        model.load(&config).unwrap();
+
+        // Build a prompt that exceeds the default context window (4096 tokens)
+        let huge_prompt = "word ".repeat(10000);
+        let request = InferenceRequest {
+            prompt: runtime::Prompt::new(&huge_prompt),
+            temperature: 0.1,
+            max_tokens: 512,
+        };
+
+        let result = model.infer(request);
+        assert!(result.is_err());
+        match result {
+            Err(ProviderError::Model(msg)) => {
+                assert!(
+                    msg.contains("prompt too large"),
+                    "expected 'prompt too large' error: {}",
+                    msg
+                );
+            }
+            _ => panic!("expected ProviderError::Model for oversized prompt"),
+        }
+    }
+
+    #[test]
+    fn model_unload_cleans_up_properly() {
+        let mut model = LlamaCppModel::new();
+        let config = ResolvedConfig {
+            model_path: test_model_path(),
+            ..ResolvedConfig::default()
+        };
+        model.load(&config).unwrap();
+
+        // Verify model is loaded
+        let info = model.info();
+        assert_eq!(info.version, "loaded");
+
+        // Unload
+        model.unload().unwrap();
+
+        // Verify model is unloaded
+        let info = model.info();
+        assert_eq!(info.version, "unknown");
+        assert!(model.loaded_config.is_none());
+
+        // Verify inference fails after unload
+        let request = InferenceRequest {
+            prompt: runtime::Prompt::new("test"),
+            temperature: 0.1,
+            max_tokens: 16,
+        };
+        let result = model.infer(request);
+        assert!(result.is_err());
     }
 }
