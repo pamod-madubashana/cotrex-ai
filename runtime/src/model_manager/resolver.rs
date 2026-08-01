@@ -81,8 +81,8 @@ mod tests {
     fn resolve_installed_model() {
         let registry = ModelRegistry::built_in();
         let resolver = ModelResolver::new(registry);
-        // qwen2.5-0.5b is not installed in ~/.cotrex/models, so this should fail
-        let result = resolver.resolve("qwen2.5-0.5b");
+        // gemma-3-1b is not installed in ~/.cotrex/models, so this should fail
+        let result = resolver.resolve("gemma-3-1b");
         assert!(result.is_err());
     }
 
@@ -99,8 +99,8 @@ mod tests {
         let registry = ModelRegistry::built_in();
         let resolver = ModelResolver::new(registry);
         let list = resolver.list().unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].0.id, "qwen2.5-0.5b");
+        assert_eq!(list.len(), 8);
+        assert_eq!(list[0].0.id, "gemma-3-1b");
         // Not installed in test env
         assert!(!list[0].1);
     }
@@ -108,6 +108,7 @@ mod tests {
     #[test]
     fn load_registry_includes_defaults() {
         let registry = load_registry().unwrap();
-        assert!(registry.find("qwen2.5-0.5b").is_some());
+        assert!(registry.find("gemma-3-1b").is_some());
+        assert!(registry.find("qwen3-8b").is_some());
     }
 }

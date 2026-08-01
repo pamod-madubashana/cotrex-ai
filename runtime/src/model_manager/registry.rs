@@ -10,6 +10,15 @@ pub struct ModelDefinition {
     pub sha256: Option<String>,
     pub size: u64,
     pub context: Option<u32>,
+    /// Performance tier: Fast, Balanced, Powerful, High-end, Enthusiast.
+    #[serde(default)]
+    pub tier: Option<String>,
+    /// Minimum recommended RAM in GB.
+    #[serde(default)]
+    pub ram_gb: Option<u32>,
+    /// Short one-line description of the model's strengths.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -61,9 +70,17 @@ size = 1000
     #[test]
     fn find_existing_model() {
         let registry = ModelRegistry::built_in();
-        let model = registry.find("qwen2.5-0.5b");
+        let model = registry.find("gemma-3-1b");
         assert!(model.is_some());
-        assert_eq!(model.unwrap().filename, "qwen2.5-0.5b-instruct-q4_k_m.gguf");
+        assert_eq!(model.unwrap().filename, "gemma-3-1b-it-q4_k_m.gguf");
+    }
+
+    #[test]
+    fn model_has_tier_and_ram() {
+        let registry = ModelRegistry::built_in();
+        let model = registry.find("qwen3-8b").unwrap();
+        assert_eq!(model.tier.as_deref(), Some("Powerful"));
+        assert_eq!(model.ram_gb, Some(8));
     }
 
     #[test]
@@ -78,16 +95,16 @@ size = 1000
         let user = ModelRegistry::parse(
             r#"
 [[models]]
-id = "qwen2.5-0.5b"
-filename = "custom-qwen.gguf"
+id = "gemma-3-1b"
+filename = "custom-gemma.gguf"
 url = "https://example.com/custom.gguf"
 size = 999
 "#,
         )
         .unwrap();
         registry.merge(user);
-        let model = registry.find("qwen2.5-0.5b").unwrap();
-        assert_eq!(model.filename, "custom-qwen.gguf");
+        let model = registry.find("gemma-3-1b").unwrap();
+        assert_eq!(model.filename, "custom-gemma.gguf");
         assert_eq!(model.size, 999);
     }
 }
