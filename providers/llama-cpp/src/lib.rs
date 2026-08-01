@@ -3,7 +3,7 @@ use runtime::{
     ResolvedConfig,
 };
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 #[cfg(feature = "real-inference")]
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -226,8 +226,18 @@ impl LocalModel for LlamaCppModel {
 
             // Phase 5: Generate tokens
             let phase_start = Instant::now();
-            let mut sampler =
-                LlamaSampler::chain_simple([LlamaSampler::dist(1234), LlamaSampler::greedy()]);
+            let seed = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u32;
+            let mut sampler = if request.temperature <= 0.0 {
+                LlamaSampler::chain_simple([LlamaSampler::dist(seed), LlamaSampler::greedy()])
+            } else {
+                LlamaSampler::chain_simple([
+                    LlamaSampler::temp(request.temperature),
+                    LlamaSampler::dist(seed),
+                ])
+            };
 
             let mut output = String::new();
             let mut n_cur = batch.n_tokens();
