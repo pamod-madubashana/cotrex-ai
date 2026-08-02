@@ -295,7 +295,10 @@ impl LocalModel for LlamaCppModel {
                 None
             };
 
-            Ok(InferenceResponse { text: output, profile })
+            Ok(InferenceResponse {
+                text: output,
+                profile,
+            })
         }
 
         #[cfg(not(feature = "real-inference"))]
