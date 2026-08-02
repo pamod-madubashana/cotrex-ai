@@ -34,6 +34,7 @@ pub struct InferenceContext {
     pub git_branch: Option<String>,
     pub git_dirty: bool,
     pub git_modified_count: usize,
+    pub tracked_files: usize,
 }
 
 impl Default for InferenceContext {
@@ -46,6 +47,7 @@ impl Default for InferenceContext {
             git_branch: None,
             git_dirty: false,
             git_modified_count: 0,
+            tracked_files: 0,
         }
     }
 }
@@ -59,6 +61,7 @@ impl InferenceContext {
             self.git_branch.as_deref(),
             self.git_dirty,
             self.git_modified_count,
+            self.tracked_files,
         )
     }
 }
@@ -104,6 +107,7 @@ fn compute_hash(
     git_branch: Option<&str>,
     git_dirty: bool,
     git_modified_count: usize,
+    tracked_files: usize,
 ) -> u64 {
     let mut sorted: Vec<&String> = changes.iter().collect();
     sorted.sort();
@@ -125,6 +129,7 @@ fn compute_hash(
     git_branch.hash(&mut hasher);
     (git_dirty as u8).hash(&mut hasher);
     git_modified_count.hash(&mut hasher);
+    tracked_files.hash(&mut hasher);
 
     hasher.finish()
 }
@@ -169,6 +174,7 @@ mod tests {
             git_branch: None,
             git_dirty: false,
             git_modified_count: 0,
+            tracked_files: 5,
         };
         let computed = ctx.compute_hash();
         assert_ne!(computed, 0);
@@ -177,8 +183,8 @@ mod tests {
     #[test]
     fn hash_deterministic() {
         let changes = vec!["main.rs".into(), "lib.rs".into()];
-        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0);
-        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0);
+        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0, 10);
+        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0, 10);
         assert_eq!(h1, h2);
     }
 
@@ -186,24 +192,24 @@ mod tests {
     fn hash_sort_independent() {
         let a = vec!["main.rs".into(), "lib.rs".into()];
         let b = vec!["lib.rs".into(), "main.rs".into()];
-        let h1 = compute_hash(&a, WorkspaceStatus::Modified, 2, None, false, 0);
-        let h2 = compute_hash(&b, WorkspaceStatus::Modified, 2, None, false, 0);
+        let h1 = compute_hash(&a, WorkspaceStatus::Modified, 2, None, false, 0, 10);
+        let h2 = compute_hash(&b, WorkspaceStatus::Modified, 2, None, false, 0, 10);
         assert_eq!(h1, h2);
     }
 
     #[test]
     fn hash_differs_by_status() {
         let changes = vec!["a.rs".into()];
-        let h1 = compute_hash(&changes, WorkspaceStatus::Clean, 1, None, false, 0);
-        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 1, None, false, 0);
+        let h1 = compute_hash(&changes, WorkspaceStatus::Clean, 1, None, false, 0, 5);
+        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 1, None, false, 0, 5);
         assert_ne!(h1, h2);
     }
 
     #[test]
     fn hash_differs_by_file_count() {
         let changes = vec!["a.rs".into()];
-        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 1, None, false, 0);
-        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0);
+        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 1, None, false, 0, 5);
+        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 2, None, false, 0, 5);
         assert_ne!(h1, h2);
     }
 
@@ -211,8 +217,16 @@ mod tests {
     fn hash_differs_by_changes() {
         let a = vec!["a.rs".into()];
         let b = vec!["b.rs".into()];
-        let h1 = compute_hash(&a, WorkspaceStatus::Modified, 1, None, false, 0);
-        let h2 = compute_hash(&b, WorkspaceStatus::Modified, 1, None, false, 0);
+        let h1 = compute_hash(&a, WorkspaceStatus::Modified, 1, None, false, 0, 5);
+        let h2 = compute_hash(&b, WorkspaceStatus::Modified, 1, None, false, 0, 5);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn hash_differs_by_tracked_files() {
+        let changes = vec!["a.rs".into()];
+        let h1 = compute_hash(&changes, WorkspaceStatus::Modified, 1, None, false, 0, 5);
+        let h2 = compute_hash(&changes, WorkspaceStatus::Modified, 1, None, false, 0, 10);
         assert_ne!(h1, h2);
     }
 

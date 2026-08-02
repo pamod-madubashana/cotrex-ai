@@ -54,9 +54,10 @@ impl Orchestrator {
         let response = self.provider.execute(enriched)?;
 
         let raw = extract_raw_text(&response);
-        let model_output = self
-            .output_parser
-            .parse(&InferenceResponse { text: raw.clone(), profile: None });
+        let model_output = self.output_parser.parse(&InferenceResponse {
+            text: raw.clone(),
+            profile: None,
+        });
 
         let capability = self.capability_parser.parse(&model_output, &original);
 
@@ -65,6 +66,12 @@ impl Orchestrator {
             raw_output: model_output.raw,
             warnings: model_output.warnings,
         })
+    }
+
+    /// Get workspace context directly without LLM inference.
+    /// Used by workspace_context tool to return raw context.
+    pub fn context(&self) -> Result<crate::context::InferenceContext, RuntimeError> {
+        self.context_source.context()
     }
 }
 
@@ -237,6 +244,7 @@ mod tests {
             git_branch: None,
             git_dirty: false,
             git_modified_count: 0,
+            tracked_files: 50,
         };
 
         let request = OrchestrationRequest {
@@ -344,5 +352,70 @@ mod tests {
 
         let resp = orch.execute(request).unwrap();
         assert!(!resp.text().is_empty());
+    }
+
+    #[test]
+    fn orchestrator_context_returns_default() {
+        let orch = test_orchestrator();
+        let ctx = orch.context().unwrap();
+        assert_eq!(ctx, InferenceContext::default());
+    }
+
+    #[test]
+    fn orchestrator_context_with_workspace() {
+        struct TestContextSource;
+
+        impl ContextSource for TestContextSource {
+            fn context(&self) -> Result<InferenceContext, RuntimeError> {
+                Ok(InferenceContext {
+                    recent_changes: vec!["src/main.rs".into()],
+                    workspace_status: WorkspaceStatus::Modified,
+                    file_count: 10,
+                    hash: 12345,
+                    git_branch: Some("main".into()),
+                    git_dirty: true,
+                    git_modified_count: 3,
+                    tracked_files: 15,
+                })
+            }
+        }
+
+        let orch = Orchestrator::new(
+            Arc::new(MockProvider),
+            Arc::new(TestContextSource),
+            Arc::new(DefaultPromptAssembler),
+            Arc::new(crate::parser::DefaultOutputParser),
+            Arc::new(PassthroughParser),
+        );
+
+        let ctx = orch.context().unwrap();
+        assert_eq!(ctx.workspace_status, WorkspaceStatus::Modified);
+        assert_eq!(ctx.file_count, 10);
+        assert_eq!(ctx.git_branch, Some("main".into()));
+        assert!(ctx.git_dirty);
+        assert_eq!(ctx.git_modified_count, 3);
+        assert_eq!(ctx.recent_changes, vec!["src/main.rs".to_string()]);
+    }
+
+    #[test]
+    fn orchestrator_context_failure_returns_error() {
+        struct FailingContextSource;
+
+        impl ContextSource for FailingContextSource {
+            fn context(&self) -> Result<InferenceContext, RuntimeError> {
+                Err(RuntimeError::Provider("context unavailable".into()))
+            }
+        }
+
+        let orch = Orchestrator::new(
+            Arc::new(MockProvider),
+            Arc::new(FailingContextSource),
+            Arc::new(DefaultPromptAssembler),
+            Arc::new(crate::parser::DefaultOutputParser),
+            Arc::new(PassthroughParser),
+        );
+
+        let result = orch.context();
+        assert!(result.is_err());
     }
 }

@@ -93,6 +93,7 @@ mod tests {
             git_branch: Some("main".into()),
             git_dirty: true,
             git_modified_count: 2,
+            tracked_files: 10,
         }
     }
 
@@ -148,6 +149,7 @@ mod tests {
             git_branch: None,
             git_dirty: false,
             git_modified_count: 0,
+            tracked_files: 0,
         };
         let request = CapabilityRequest::BuildSummary(BuildSummaryRequest {
             metadata: RequestMetadata::new(),
@@ -175,6 +177,7 @@ mod tests {
             git_branch: None,
             git_dirty: false,
             git_modified_count: 0,
+            tracked_files: 5,
         };
         let request = CapabilityRequest::BuildSummary(BuildSummaryRequest {
             metadata: RequestMetadata::new(),
