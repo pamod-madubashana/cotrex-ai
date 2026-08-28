@@ -258,10 +258,10 @@ impl LocalModel for LlamaCppModel {
                     .map_err(|e| ProviderError::Model(format!("token decode failed: {e}")))?;
 
                 // Stream token to callback if present
-                if let Some(ref cb) = request.token_callback {
-                    if let Ok(mut f) = cb.lock() {
-                        f(&text);
-                    }
+                if let Some(ref cb) = request.token_callback
+                    && let Ok(mut f) = cb.lock()
+                {
+                    f(&text);
                 }
 
                 output.push_str(&text);
