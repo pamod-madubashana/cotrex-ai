@@ -4,6 +4,8 @@ use std::time::Duration;
 use crate::ProviderError;
 use crate::config::ResolvedConfig;
 
+pub type TokenCallback = Arc<Mutex<dyn FnMut(&str) + Send + 'static>>;
+
 // ---------------------------------------------------------------------------
 // Chat message
 //
@@ -74,7 +76,7 @@ pub struct InferenceRequest {
     /// Optional token-by-token callback. When set, the provider sends each
     /// generated text piece through this callback before accumulating.
     /// Used by the UI layer for real-time streaming in User mode.
-    pub token_callback: Option<Arc<Mutex<dyn FnMut(&str) + Send + 'static>>>,
+    pub token_callback: Option<TokenCallback>,
 }
 
 impl std::fmt::Debug for InferenceRequest {
